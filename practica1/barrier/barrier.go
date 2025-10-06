@@ -73,7 +73,7 @@ func readEndpoints(filename string) ([]string, error) {
 // Cuando todos los procesos (n-1) han llegado, envía 'true'
 // por el canal "barrierChan" para indicar que se puede continuar.
 // ================================================================
-func handleConnection(conn net.Conn, barrierChan chan<- bool, received *map[string]bool, mu *sync.Mutex, n int) {
+func handleConnection(conn net.Conn, barrierChan chan<- bool, quitChannel chan<- bool, received *map[string]bool, mu *sync.Mutex, n int) {
 	defer conn.Close()
 	buf := make([]byte, 1024)
 	_, err := conn.Read(buf)
@@ -84,9 +84,10 @@ func handleConnection(conn net.Conn, barrierChan chan<- bool, received *map[stri
 	msg := string(buf)
 	mu.Lock()
 	(*received)[msg] = true
-	fmt.Println("Process %s reached the barrier (%d/%d)\n", msg, len(*received), n-1)
+	fmt.Println("Process ", msg, " reached the barrier (",len(*received),"/",n-1,") \n")
 	if len(*received) == n-1 {
 		barrierChan <- true
+		quitChannel <- true
 	}
 	mu.Unlock()
 }
@@ -110,6 +111,11 @@ func getEndpoints() ([]string, int, error) {
 	}
 
 	endpointsFile := os.Args[1]
+	/* Hacemos esta declaración porque más abajo cuando se asigna
+	   valor en "endpoints, err = readEndpoints(endpointsFile)"
+	   err ya existe y por tanto se tiene que usar "=". En go
+	   cuando se usa ":=" es para crear una variable y asignarle
+	   valor.*/
 	var endpoints []string // Por qué esta declaración ?
 	lineNumber, err := strconv.Atoi(os.Args[2])
 	if err != nil || lineNumber < 1 {
@@ -143,7 +149,7 @@ func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
 				fmt.Println("Error accepting connection:", err)
 				continue
 			}
-			go handleConnection(conn, barrierChan, receivedMap, mu, n)
+			go handleConnection(conn, barrierChan, quitChannel, receivedMap, mu, n)
 		}
 	}
 }
@@ -238,6 +244,7 @@ func main() {
 	fmt.Println("Waiting for all the processes to reach the barrier")
 	<-barrierChan
 	fmt.Println("Every process reached the barrier. Resuming execution...")
-	quitChannel <- true
+
 	listener.Close()
+	fmt.Println("Listener closed")
 }
