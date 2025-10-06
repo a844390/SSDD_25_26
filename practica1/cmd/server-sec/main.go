@@ -1,19 +1,18 @@
 /*
-* AUTOR: Rafael Tolosana Calasanz y Unai Arronategui
+* AUTOR: Pedro Chaves Muniesa, Beatriz Emanuela Fetita
 * ASIGNATURA: 30221 Sistemas Distribuidos del Grado en Ingeniería Informática
 *			Escuela de Ingeniería y Arquitectura - Universidad de Zaragoza
-* FECHA: septiembre de 2022
-* FICHERO: server-draft.go
-* DESCRIPCIÓN: contiene la funcionalidad esencial para realizar los servidores
-*				correspondientes a la práctica 1
+* FECHA: octubre de 2025
+* FICHERO: main.go
+* DESCRIPCIÓN: funcionalidad del servidor secuencial
  */
 package main
 
 import (
 	"encoding/gob"
 	"log"
-	"os"
 	"net"
+	"os"
 	"practica1/com"
 )
 
@@ -40,7 +39,7 @@ func findPrimes(interval com.TPInterval) (primes []int) {
 	return primes
 }
 
-func processRequest(conn net.Conn){
+func processRequest(conn net.Conn) {
 	var request com.Request
 	decoder := gob.NewDecoder(conn)
 	err := decoder.Decode(&request)
@@ -65,7 +64,6 @@ func main() {
 
 	log.SetFlags(log.Lshortfile | log.Lmicroseconds)
 
-	
 	log.Println("***** Listening for new connection in endpoint ", endpoint)
 	for {
 		conn, err := listener.Accept()

@@ -1,16 +1,16 @@
 /*
-* AUTOR: Rafael Tolosana Calasanz y Unai Arronategui
+* AUTOR: Pedro Chaves Muniesa, Beatriz Emanuela Fetita
 * ASIGNATURA: 30221 Sistemas Distribuidos del Grado en Ingeniería Informática
 *			Escuela de Ingeniería y Arquitectura - Universidad de Zaragoza
-* FECHA: septiembre de 2022
-* FICHERO: server-draft.go
-* DESCRIPCIÓN: contiene la funcionalidad esencial para realizar los servidores
-*				correspondientes a la práctica 1
+* FECHA: octubre de 2025
+* FICHERO: worker.go
+* DESCRIPCIÓN: contenido del fichero worker
  */
 package main
 
 import (
 	"encoding/gob"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -52,8 +52,9 @@ func processRequest(conn net.Conn) {
 }
 
 func main() {
+	fmt.Println("Entra en el worker")
 	args := os.Args
-	if len(args) != 2 {
+	if len(args) != 3 {
 		log.Println("Error: endpoint missing: go run server.go ip:port(worker) ip:port(master)")
 		os.Exit(1)
 	}
@@ -64,7 +65,8 @@ func main() {
 	conn, err := net.Dial("tcp", endMaster)
 	com.CheckError(err)
 	encoder := gob.NewEncoder(conn)
-	err = encoder.Encode("ready")
+	ready := "ready"
+	err = encoder.Encode(ready)
 	com.CheckError(err)
 	conn.Close()
 

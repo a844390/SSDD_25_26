@@ -1,19 +1,18 @@
 /*
-* AUTOR: Rafael Tolosana Calasanz y Unai Arronategui
+* AUTOR: Pedro Chaves Muniesa, Beatriz Emanuela Fetita
 * ASIGNATURA: 30221 Sistemas Distribuidos del Grado en Ingeniería Informática
 *			Escuela de Ingeniería y Arquitectura - Universidad de Zaragoza
-* FECHA: septiembre de 2022
-* FICHERO: server-draft.go
-* DESCRIPCIÓN: contiene la funcionalidad esencial para realizar los servidores
-*				correspondientes a la práctica 1
+* FECHA: octubre de 2025
+* FICHERO: main.go
+* DESCRIPCIÓN: funcionalidad del servidor con pool fijo
  */
 package main
 
 import (
 	"encoding/gob"
 	"log"
-	"os"
 	"net"
+	"os"
 	"practica1/com"
 )
 
@@ -40,7 +39,7 @@ func findPrimes(interval com.TPInterval) (primes []int) {
 	return primes
 }
 
-func processRequest(conn net.Conn){
+func processRequest(conn net.Conn) {
 	var request com.Request
 	decoder := gob.NewDecoder(conn)
 	err := decoder.Decode(&request)
@@ -52,7 +51,7 @@ func processRequest(conn net.Conn){
 	encoder.Encode(&reply)
 }
 
-func pool(id int, connChan chan net.Conn){
+func pool(id int, connChan chan net.Conn) {
 	for conn := range connChan {
 		log.Println("Procesando request: ", id)
 		processRequest(conn)
@@ -75,7 +74,7 @@ func main() {
 	connChan := make(chan net.Conn) //Canal para las conexiones
 	nPool := 5
 
-	for i := 0; i<nPool; i++{
+	for i := 0; i < nPool; i++ {
 		go pool(i, connChan)
 	}
 

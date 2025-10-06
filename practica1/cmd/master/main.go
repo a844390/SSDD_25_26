@@ -1,10 +1,10 @@
 /*
-* AUTOR: Rafael Tolosana Calasanz y Unai Arronategui
+* AUTOR: Pedro Chaves Muniesa, Beatriz Emanuela Fetita
 * ASIGNATURA: 30221 Sistemas Distribuidos del Grado en Ingeniería Informática
 *			Escuela de Ingeniería y Arquitectura - Universidad de Zaragoza
-* FECHA: septiembre de 2022
-* FICHERO: client.go
-* DESCRIPCIÓN: cliente completo para los cuatro escenarios de la práctica 1
+* FECHA: octubre de 2025
+* FICHERO: master.go
+* DESCRIPCIÓN: master completo para coexión con workers
  */
 package main
 
@@ -149,10 +149,18 @@ func receiveReply(conn net.Conn, replayTimeChan chan com.TimeCommEvent) {
 	conn.Close()
 }
 
+func startWorker(ipWorker, endpoint string, endMaster string) {
+	log.Println("Arrancado worker: ", ipWorker)
+	comm := exec.Command("ssh", ipWorker,
+		"/misc/alumnos/sd/sd2526/a840269/practica1/cmd/worker/main ", endpoint, endMaster)
+	err := comm.Start()
+	com.CheckError(err)
+}
+
 func main() {
 	args := os.Args
-	if len(args) != 2 {
-		log.Println("Error: endpoint missing: go run client.go endpointFile ip:port(master)")
+	if len(args) != 3 {
+		log.Println("Error: use: go run main.go endpointFile ip:port(master)")
 		os.Exit(1)
 	}
 	workers, _ := readEndpoints(args[1])
@@ -160,11 +168,10 @@ func main() {
 
 	// Arranca workers
 	for _, worker := range workers {
-		log.Println("Arranco worker: ", worker.ip)
-		comm := exec.Command("ssh", worker.ip,
-			"/misc/alumnos/sd/sd2526/a840269/practica1/cmd/worker/main ", worker.ip, ":", worker.port, endMaster)
-		err := comm.Run()
-		com.CheckError(err)
+		go func(worker struct{ ip, port string }) {
+			endpoint := worker.ip + ":" + worker.port
+			go startWorker(worker.ip, endpoint, endMaster)
+		}(worker)
 	}
 
 	listener, err := net.Listen("tcp", endMaster)
@@ -176,7 +183,7 @@ func main() {
 		conn, err := listener.Accept()
 		com.CheckError(err)
 
-		var ready com.Request
+		var ready string
 		decoder := gob.NewDecoder(conn)
 		err = decoder.Decode(&ready)
 		com.CheckError(err)
