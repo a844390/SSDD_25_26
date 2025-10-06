@@ -6,7 +6,7 @@
 
 ## Pedro Manuel Chaves Muniesa, 844390
 
-Beatriz Emanuela Fetita, 840269
+## Beatriz Emanuela Fetita, 840269
 
 Universidad de Zaragoza  
 Sistemas Distribuidos-   
