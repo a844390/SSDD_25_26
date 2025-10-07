@@ -15,12 +15,14 @@ En el cliente: **go run server.go ip:port(server)**
 Por cada cliente se ejecuta:
 
 **go run barrier.go endpoints.txt <num_linea>** 
+
 El número de línea es la lína correspondiente al endpoint de la máquina en el fichero .txt
 
 ### Master-Worker
 Ejecución solo del master: 
 
 **go run main.go endpointFile ip:port(master)**
+
 Lanza los workers directamente por ssh con el comando: 
 
 **go run server.go ip:port(worker) ip:port(master)**
