@@ -8,7 +8,7 @@ En términos generales, puede decirse que el problema fundamental de los sistema
 
 ## Instrucciones de ejecución
 ### Servidores secuencial, concurrente y con pool fijo + clientes
-En el servidor: **go run server.go ip:port**
+En el servidor: **go run client.go ip:port**
 En el cliente: **go run server.go ip:port(server)**
 
 ### Barrera
@@ -25,4 +25,4 @@ Ejecución solo del master:
 
 Lanza los workers directamente por ssh con el comando: 
 
-**go run server.go ip:port(worker) ip:port(master)**
+**go run main.go ip:port(worker) ip:port(master)**
