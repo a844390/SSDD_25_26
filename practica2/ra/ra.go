@@ -10,12 +10,9 @@ package ra
 
 import (
 	"fmt"
-	"ms"
+	"practica2/ms"
 	"sync"
-    "practica2/cmd/lector"
-    "practica2/cmd/escritor"
 
-	"golang.org/x/tools/go/callgraph/cha"
 )
 
 /*------------------------------------------------------
@@ -47,15 +44,15 @@ type RASharedDB struct {
     OurSeqNum   int                 // Número de secuencia del proceso
     HigSeqNum   int                 // Número de secuencia más alto recibido
     OutRepCnt   int                 // Número de respuestas recibidas 
-    ReqCS       boolean             // Indica si el proceso quiere entrar en la sección crítica
-    RepDefd     bool[]              // Indica si se ha diferido el envío de un reply al proceso j 
+    ReqCS       bool                // Indica si el proceso quiere entrar en la sección crítica
+    RepDefd     []bool              // Indica si se ha diferido el envío de un reply al proceso j 
     MS          *ms.MessageSystem   // Sistema de mensajería
     done        chan bool           // Canal para indicar que el proceso ha terminado
     chrep       chan bool           //canal para indicar que ha recibido una respuesta
     Mutex       sync.Mutex          // mutex para proteger concurrencia sobre las variables
-    chareplies  chan Reply        // canal para recibir mensajes Reply
-    charequests chan Request      // canal para recibir mensajes Request
-    tipo       string              // tipo de proceso: lector o escritor    
+    chareplies  chan Reply          // canal para recibir mensajes Reply
+    charequests chan Request        // canal para recibir mensajes Request
+    tipo       string               // tipo de proceso: lector o escritor    
 }
 
 /*------------------------------------------------------
@@ -76,20 +73,21 @@ func New(me int, usersFile string, n int) (*RASharedDB) {
     // registra los tipos de mensajes permitidos
     messageTypes := []ms.Message{Request{}, Reply{}}
     //crea el sistema de mensajería local
-    msgs = ms.New(me, usersFile string, messageTypes)
+    msgs := ms.New(me, usersFile, messageTypes)
     // inicializa la estructura de datos compartida
     ra := RASharedDB{
         Me:                 me, 
         N:                  n, 
         OurSeqNum:          0, 
-        HigSeqNum           0, 
+        HigSeqNum:          0, 
         OutRepCnt:          0,
         ReqCS:              false, 
-        RepDefd             make([]bool, n+1), 
+        RepDefd:            make([]bool, n+1), 
         MS:                 &msgs,  
         done:               make(chan bool),  
         chrep:              make(chan bool), 
-        Mutex:              &sync.Mutex{}}
+        Mutex:              sync.Mutex{},
+	}
     // TODO completar
 
     go ra.handleReply()
@@ -112,20 +110,20 @@ func (ra *RASharedDB) receiveMessages(file string) {
 		raw := ra.MS.Receive()
 
 		// Determinar el tipo de mensaje recibido
-		switch msg := raw.(type) {
+		switch raw.(type) {
 		    case Request:
                 fmt.Printf("Proceso %d recibió mensaje request: %#v\n", ra.Me, raw)
 				ra.charequests <- raw.(Request) // Mensaje REQUEST recibido
 			case Reply:
                 fmt.Printf("Proceso %d recibió mensaje reply: %#v\n", ra.Me, raw)
-				ra.chareplies <- raw.(Request) // Mensaje REPLY recibido
-            case UpdateFile:
-                fmt.Printf("Proceso %d recibió mensaje actualizar fichero: %#v\n", ra.Me, raw)
+				ra.chareplies <- raw.(Reply) // Mensaje REPLY recibido
+//            case UpdateFile:
+  //              fmt.Printf("Proceso %d recibió mensaje actualizar fichero: %#v\n", ra.Me, raw)
                 // escribir fichero
-                lector.WriteMessage(file, raw.Texto)
+    //            lector.WriteMessage(file, raw.Texto)
 
-                newFile := escritor.Read(file)
-                fmt.Println("Proceso" , ra.Me, "actualizo fichero: ", file)                
+      //          newFile := escritor.Read(file)
+        //        fmt.Println("Proceso" , ra.Me, "actualizo fichero: ", file)                
 			default:
 				fmt.Printf("Proceso %d recibió mensaje desconocido: %#v\n", ra.Me, raw)
 		}
@@ -145,7 +143,7 @@ func (ra *RASharedDB) handleRequest(){
     for {
         req := <-ra.charequests
         // varable para diferir la respuesta
-        var deferReply := false
+        var deferReply = false
 
         // Actualiza el reloj más alto
         if req.Clock > ra.HigSeqNum {
@@ -182,7 +180,7 @@ func (ra *RASharedDB) handleReply(){
         <-ra.chareplies
         ra.OutRepCnt--
         if ra.OutRepCnt == 0 {
-            ra.chrep <- true:
+            ra.chrep <- true
         }
     }
     
@@ -244,7 +242,7 @@ func (ra *RASharedDB) PostProtocol(){
     ra.ReqCS = false
     ra.Mutex.Unlock()
     //revisa procesos diferido y manda rely
-    for j := j <= ra.N; j++ {
+    for j := 1; j <= ra.N; j++ {
         if ra.RepDefd[j-1] {
             ra.RepDefd[j-1] = false
             ra.MS.Send(j, Reply{})
