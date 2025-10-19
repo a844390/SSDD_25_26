@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"ms"
 	"sync"
+    "practica2/cmd/lector"
+    "practica2/cmd/escritor"
 
 	"golang.org/x/tools/go/callgraph/cha"
 )
@@ -81,46 +83,110 @@ func New(me int, usersFile string, n int) (*RASharedDB) {
         N:                  n, 
         OurSeqNum:          0, 
         HigSeqNum           0, 
-        OutRepCnt           0,
+        OutRepCnt:          0,
         ReqCS:              false, 
         RepDefd             make([]bool, n+1), 
         MS:                 &msgs,  
         done:               make(chan bool),  
-        chrep               make(chan bool), 
+        chrep:              make(chan bool), 
         Mutex:              &sync.Mutex{}}
     // TODO completar
 
-    go ra.recieveMessages()
+    go ra.handleReply()
+
+    go ra.handleRequest()
 
     return &ra
 }
 
-/*------------------------------------------------------
-    RECEPCIÓN Y MANEJO DE MENSAJES
-  ------------------------------------------------------*/
-/*
-    Escucha continuamente los mensajes entrantes y los despacha 
-    a las funciones correspondientes (handleRequest / handleRely)
-*/
-func (ra *RASharedDB) recieveMessages(){
-    for {
-        request := <-ra.charequests
-        
-}
+/* ---------------------------------------------------------------------
+   RECEPCIÓN Y MANEJO DE MENSAJES
+   --------------------------------------------------------------------- */
 
+/*
+    Escucha continuamente los mensajes y los gestiona (handleRequest / handleReply)
+*/
+func (ra *RASharedDB) receiveMessages(file string) {
+	for {
+		// Esperamos un mensaje del sistema de mensajería (bloqueante)
+		raw := ra.MS.Receive()
+
+		// Determinar el tipo de mensaje recibido
+		switch msg := raw.(type) {
+		    case Request:
+                fmt.Printf("Proceso %d recibió mensaje request: %#v\n", ra.Me, raw)
+				ra.charequests <- raw.(Request) // Mensaje REQUEST recibido
+			case Reply:
+                fmt.Printf("Proceso %d recibió mensaje reply: %#v\n", ra.Me, raw)
+				ra.chareplies <- raw.(Request) // Mensaje REPLY recibido
+            case UpdateFile:
+                fmt.Printf("Proceso %d recibió mensaje actualizar fichero: %#v\n", ra.Me, raw)
+                // escribir fichero
+                lector.WriteMessage(file, raw.Texto)
+
+                newFile := escritor.Read(file)
+                fmt.Println("Proceso" , ra.Me, "actualizo fichero: ", file)                
+			default:
+				fmt.Printf("Proceso %d recibió mensaje desconocido: %#v\n", ra.Me, raw)
+		}
+	}
+}
 
 /*------------------------------------------------------
     MANEJO DE REQUEST Y REPLY
   ------------------------------------------------------*/
 /*
     Procesa un mensaje REQUEST
+
+    Si el proceso local no quiere entrar en SC, responde inmediatamente
+    Si el proceso local quiere entrar en SC, decide si se difiere o responde según los números de secuencia y los IDs de los procesos
 */
-func (ra *RASharedDB) handleRequest(){}
+func (ra *RASharedDB) handleRequest(){
+    for {
+        req := <-ra.charequests
+        // varable para diferir la respuesta
+        var deferReply := false
+
+        // Actualiza el reloj más alto
+        if req.Clock > ra.HigSeqNum {
+            ra.HigSeqNum = req.Clock
+        }
+
+        ra.Mutex.Lock()
+        // si estoy pidiendo en SC, y el proceso tiene mayor número de secuencia o si es igual, si tiene mayor pid, se difiere
+        deferReply = ra.ReqCS && ((req.Clock > ra.OurSeqNum) || (req.Clock == ra.OurSeqNum && req.Pid > ra.Me))
+        ra.Mutex.Unlock()
+
+        // Si se difiere la respuesta se marca en el vector
+        if deferReply {
+            ra.Mutex.Lock()
+            ra.RepDefd[req.Pid-1] = true
+            ra.Mutex.Unlock()
+        } else {
+            // sin no se difiere, enviamos la respuesta
+            ra.MS.Send(req.Pid, Reply{})
+        }
+    }
+
+}
 
 /*
     Procesa un mensaje REPLY
+
+    Cada vez que llega un reply, se decrementa el contador OutRepCnt
+    Cuando este contador llegue a 0, se notifica a través del canal chrep
+
 */
-func (ra *RASharedDB) handleReply(){}
+func (ra *RASharedDB) handleReply(){
+    for {
+        <-ra.chareplies
+        ra.OutRepCnt--
+        if ra.OutRepCnt == 0 {
+            ra.chrep <- true:
+        }
+    }
+    
+}
 
 
 /*------------------------------------------------------
@@ -142,6 +208,7 @@ func (ra *RASharedDB) PreProtocol(){
     ra.Mutex.Lock()
     //indicar que se quiere entrar en SC
     ra.ReqCS = true
+    ra.Mutex.Unlock()
     //genera un número de secuencia mayor que el más alto registrado
     ra.OurSeqNum = ra.HigSeqNum + 1
 
@@ -155,18 +222,8 @@ func (ra *RASharedDB) PreProtocol(){
         }
     }
 
-    // esperar a recibir todos los reply (OutRepCnt == 0)
-    for {
-        ra.Mutex.Lock()
-        if ra.OutRepCnt == 0 {
-            //recibitos todos los reply, se puede entrar en SC
-            ra.Mutex.Unlock()
-        }
-        ra.Mutex.Unlock()
-
-        // bloqueo para esperar notificación reply
-        <-ra.chrep
-    }
+    // bloqueo para esperar notificación reply
+    <-ra.chrep
 }
 
 //Pre: Verdad
@@ -185,15 +242,14 @@ func (ra *RASharedDB) PostProtocol(){
 
     //indicamos salida de SC
     ra.ReqCS = false
+    ra.Mutex.Unlock()
     //revisa procesos diferido y manda rely
     for j := j <= ra.N; j++ {
-        if ra.RepDefd[j] {
-            ra.RepDefd[j] = false
+        if ra.RepDefd[j-1] {
+            ra.RepDefd[j-1] = false
             ra.MS.Send(j, Reply{})
         }
     }
-
-    ra.Mutex.Unlock()
 }
 
 /*------------------------------------------------------
