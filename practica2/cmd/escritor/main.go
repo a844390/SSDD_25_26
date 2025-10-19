@@ -6,8 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"practica2/barrier"
-	"practica2/ra"
-	"practica2/rw" //Fucniones de lectura y escritura de ficheros
+	"practica2/ra" //Fucniones de lectura y escritura de ficheros
 	"strconv"
 	"time"
 )
@@ -16,6 +15,19 @@ func close(ra *ra.RASharedDB) {
 	time.Sleep(1*time.Minute + 30*time.Second)
 	fmt.Println("Cerrando ms: ", ra.Ms.Me)
 	ra.Stop()
+}
+
+func WriteMessage(fich string, msj string) {
+	fichero, err := os.OpenFile(fich, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666) // Abre el fichero en modo escritura
+	if err != nil {
+		log.Fatalf("Error al abrir el fichero: %v", err)
+	}
+	defer fichero.Close()
+	_, err = fichero.WriteString(msj) // Escribe el texto en el fichero
+	if err != nil {
+		log.Fatalf("Error al escribir en el fichero: %v", err)
+	}
+	fmt.Println("Ya he escrito en el fichero: " + fich)
 }
 
 func main() {
@@ -52,7 +64,7 @@ func main() {
 			time.Sleep(time.Duration(tiempoAleatorio) * time.Second) // Duerme el proceso durante el tiempo aleatorio
 			ras.PreProtocol()
 			fmt.Printf("Proceso %d escribiendo mensaje: %s", numLinea, msj)
-			rw.WriteMessage(nomFichero, msj)
+			WriteMessage(nomFichero, msj)
 			for i := 1; i <= ra.NUM_PROCESOS; i++ {
 				//Si no soy yo envio aviso de que he escrito
 				if i != ras.Ms.Me {

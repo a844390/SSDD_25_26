@@ -7,7 +7,6 @@ import (
 	"os"
 	"practica2/barrier"
 	"practica2/ra"
-	"practica2/rw"
 	"strconv"
 	"time"
 )
@@ -16,6 +15,15 @@ func close(ra *ra.RASharedDB) {
 	time.Sleep(1*time.Minute + 30*time.Second)
 	fmt.Println("Cerrando ms: ", ra.Ms.Me)
 	ra.Stop()
+}
+
+func Read(fich string) string {
+	contenido, err := os.ReadFile(fich) // Lee el contenido del fichero
+	if err != nil {
+		log.Fatalf("Error al leer en el fichero: %v", err)
+	}
+	fmt.Println("Ya he leido el fichero: " + fich)
+	return string(contenido)
 }
 
 func main() {
@@ -51,7 +59,7 @@ func main() {
 			time.Sleep(time.Duration(tiempoAleatorio) * time.Second) // Duerme el proceso durante el tiempo aleatorio
 			ras.PreProtocol()
 			fmt.Printf("Proceso %d leyendo mensaje", numLinea)
-			msj := rw.Read(nomFichero)
+			msj := Read(nomFichero)
 			//no hace falta avisar al resto de procesos, ya que no se modifica el fichero
 			ras.PostProtocol()
 			fmt.Printf("Proceso %d ha escrito mensaje: %s", numLinea, msj)
