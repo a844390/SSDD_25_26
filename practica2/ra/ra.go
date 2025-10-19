@@ -5,24 +5,26 @@
 * FECHA: septiembre de 2021
 * FICHERO: ricart-agrawala.go
 * DESCRIPCIÓN: Implementación del algoritmo de Ricart-Agrawala Generalizado en Go
-*/
+ */
 package ra
 
 import (
-    "fmt"
-    "ms"
-    "sync"
+	"fmt"
+	"ms"
+	"sync"
+
+	"golang.org/x/tools/go/callgraph/cha"
 )
 
 /*------------------------------------------------------
-    DEFINICON DE MANSAJES
-  ------------------------------------------------------*/
+  DEFINICON DE MANSAJES
+------------------------------------------------------*/
 
 /*
-    Mensaje Request, enviado por un proceso que desea entrar en SC
-    Contiene:
-    - Clock: número de secuencia (reloj lógico) del emisor
-    - Pid: identificador del proceso emisor
+   Mensaje Request, enviado por un proceso que desea entrar en SC
+   Contiene:
+   - Clock: número de secuencia (reloj lógico) del emisor
+   - Pid: identificador del proceso emisor
 */
 type Request struct{
     Clock   int
@@ -49,6 +51,9 @@ type RASharedDB struct {
     done        chan bool           // Canal para indicar que el proceso ha terminado
     chrep       chan bool           //canal para indicar que ha recibido una respuesta
     Mutex       sync.Mutex          // mutex para proteger concurrencia sobre las variables
+    chareplies  chan Reply        // canal para recibir mensajes Reply
+    charequests chan Request      // canal para recibir mensajes Request
+    tipo       string              // tipo de proceso: lector o escritor    
 }
 
 /*------------------------------------------------------
@@ -84,6 +89,7 @@ func New(me int, usersFile string, n int) (*RASharedDB) {
         chrep               make(chan bool), 
         Mutex:              &sync.Mutex{}}
     // TODO completar
+
     go ra.recieveMessages()
 
     return &ra
@@ -96,7 +102,11 @@ func New(me int, usersFile string, n int) (*RASharedDB) {
     Escucha continuamente los mensajes entrantes y los despacha 
     a las funciones correspondientes (handleRequest / handleRely)
 */
-func (ra *RASharedDB) recieveMessages(){}
+func (ra *RASharedDB) recieveMessages(){
+    for {
+        request := <-ra.charequests
+        
+}
 
 
 /*------------------------------------------------------
@@ -110,7 +120,7 @@ func (ra *RASharedDB) handleRequest(){}
 /*
     Procesa un mensaje REPLY
 */
-func (ra *RASharedDB) handleRely(){}
+func (ra *RASharedDB) handleReply(){}
 
 
 /*------------------------------------------------------
