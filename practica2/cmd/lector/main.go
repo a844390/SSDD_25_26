@@ -13,7 +13,7 @@ import (
 
 func close(ra *ra.RASharedDB) {
 	time.Sleep(1*time.Minute + 30*time.Second)
-	fmt.Println("Cerrando ms: ", ra.Ms.Me)
+	fmt.Println("Cerrando ms: ", ra.MS.Me)
 	ra.Stop()
 }
 
@@ -46,11 +46,11 @@ func main() {
 	defer fichero.Close()
 
 	//estructura RASharedDB
-	ras := ra.New(numLinea, "../../ms/users.txt", "lector")
+	ras := ra.New(numLinea, "../../ms/users.txt", ra.NUM_PROCESOS, "lector")
 	fmt.Printf("Estructura RA del proceso %d creada\n", numLinea)
 	time.Sleep(2 * time.Second) // Espera para que se activen todos los procesos
 	// Lanzar el listener
-	go ras.RaListener(ras.Ms, nomFichero)
+	go ras.ReceiveMessages(nomFichero)
 	fmt.Printf("Listener del proceso %d lanzado\n", numLinea)
 	go func() {
 

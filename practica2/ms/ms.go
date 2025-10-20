@@ -22,7 +22,7 @@ type MessageSystem struct {
 	mbox  chan Message
 	peers []string
 	done  chan bool
-	me    int
+	Me    int
 }
 
 const (
@@ -82,15 +82,15 @@ func Register(messageTypes []Message) {
 //	usersFile es la ruta a un fichero de texto que en cada línea contiene IP:puerto de cada participante
 //	messageTypes es un slice con todos los tipos de mensajes que los procesos se pueden intercambiar a través de este ms
 func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem) {
-	ms.me = whoIam
+	ms.Me = whoIam
 	ms.peers = parsePeers(usersFile)
 	ms.mbox = make(chan Message, MAXMESSAGES)
 	ms.done = make(chan bool)
 	Register(messageTypes)
 	go func() {
-		listener, err := net.Listen("tcp", ms.peers[ms.me-1])
+		listener, err := net.Listen("tcp", ms.peers[ms.Me-1])
 		checkError(err)
-		fmt.Println("Process listening at " + ms.peers[ms.me-1])
+		fmt.Println("Process listening at " + ms.peers[ms.Me-1])
 		defer close(ms.mbox)
 		for {
 			select {

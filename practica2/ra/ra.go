@@ -15,6 +15,11 @@ import (
 
 )
 
+const (
+	NUM_LECTORES = 2
+	NUM_PROCESOS = 4
+)
+
 /*------------------------------------------------------
   DEFINICON DE MANSAJES
 ------------------------------------------------------*/
@@ -35,6 +40,10 @@ type Request struct{
 */
 type Reply struct{}
 
+type ActualizaFichero struct{
+    Pid    int
+    Texto  string
+}
 /*------------------------------------------------------
     ESTRUCTURA PRINCIPAL DEL PROCESO
   ------------------------------------------------------*/
@@ -66,10 +75,10 @@ type RASharedDB struct {
     - me: id del proceso (1..N)
     - usersFile: fichero con las direcciones de los nodos (Ip:puerto)
     - n: número total de procesos
-
+    - tipo: que clase de proceso es (lector/escritor)
     Devuelve un puntero a un objero RASharedDB inicializado
 */
-func New(me int, usersFile string, n int) (*RASharedDB) {
+func New(me int, usersFile string, n int, tipo string) (*RASharedDB) {
     // registra los tipos de mensajes permitidos
     messageTypes := []ms.Message{Request{}, Reply{}}
     //crea el sistema de mensajería local
@@ -87,6 +96,7 @@ func New(me int, usersFile string, n int) (*RASharedDB) {
         done:               make(chan bool),  
         chrep:              make(chan bool), 
         Mutex:              sync.Mutex{},
+	tipo:		    tipo,
 	}
     // TODO completar
 
@@ -104,7 +114,7 @@ func New(me int, usersFile string, n int) (*RASharedDB) {
 /*
     Escucha continuamente los mensajes y los gestiona (handleRequest / handleReply)
 */
-func (ra *RASharedDB) receiveMessages(file string) {
+func (ra *RASharedDB) ReceiveMessages(file string) {
 	for {
 		// Esperamos un mensaje del sistema de mensajería (bloqueante)
 		raw := ra.MS.Receive()
