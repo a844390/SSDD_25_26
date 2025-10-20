@@ -95,13 +95,17 @@ func New(whoIam int, usersFile string, messageTypes []Message) (ms MessageSystem
 		for {
 			select {
 			case <-ms.done:
+				fmt.Println("Process stopped")
 				return
 			default:
-				conn, err := listener.Accept()
+				fmt.Printf("Process %d waiting for connections\n", ms.Me)
+				conn, err := listener.Accept() 
+				fmt.Printf("Process %d received a connection\n", ms.Me)
 				checkError(err)
 				decoder := gob.NewDecoder(conn)
 				var msg Message
 				err = decoder.Decode(&msg)
+				checkError(err)
 				conn.Close()
 				ms.mbox <- msg
 			}

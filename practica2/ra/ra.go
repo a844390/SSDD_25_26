@@ -11,13 +11,15 @@ package ra
 import (
 	"fmt"
 	"practica2/ms"
+    "practica2/rd_wr"
 	"sync"
 
 )
 
 const (
-	NUM_LECTORES = 2
-	NUM_PROCESOS = 4
+	NUM_LECTORES   = 1
+	NUM_ESCRITORES = 1
+	NUM_PROCESOS   = NUM_LECTORES + NUM_ESCRITORES
 )
 
 /*------------------------------------------------------
@@ -40,9 +42,9 @@ type Request struct{
 */
 type Reply struct{}
 
-type ActualizaFichero struct{
+type UpdateFile struct{
     Pid    int
-    Texto  string
+    Text  string
 }
 /*------------------------------------------------------
     ESTRUCTURA PRINCIPAL DEL PROCESO
@@ -78,27 +80,27 @@ type RASharedDB struct {
     - tipo: que clase de proceso es (lector/escritor)
     Devuelve un puntero a un objero RASharedDB inicializado
 */
-func New(me int, usersFile string, n int, tipo string) (*RASharedDB) {
+func New(me int, usersFile string, tipo string) (*RASharedDB) {
     // registra los tipos de mensajes permitidos
-    messageTypes := []ms.Message{Request{}, Reply{}}
+    messageTypes := []ms.Message{Request{}, Reply{}, UpdateFile{}}
     //crea el sistema de mensajería local
     msgs := ms.New(me, usersFile, messageTypes)
+    fmt.Printf("Sistema de mensajeria creado para el proceso %d\n", me)
     // inicializa la estructura de datos compartida
     ra := RASharedDB{
-        Me:                 me, 
-        N:                  n, 
         OurSeqNum:          0, 
         HigSeqNum:          0, 
         OutRepCnt:          0,
         ReqCS:              false, 
-        RepDefd:            make([]bool, n+1), 
+        RepDefd:            make([]bool, NUM_PROCESOS), 
         MS:                 &msgs,  
         done:               make(chan bool),  
         chrep:              make(chan bool), 
         Mutex:              sync.Mutex{},
-	tipo:		    tipo,
+        chareplies:         make(chan Reply),
+        charequests:        make(chan Request),
+	    tipo:		        tipo,
 	}
-    // TODO completar
 
     go ra.handleReply()
 
@@ -114,28 +116,30 @@ func New(me int, usersFile string, n int, tipo string) (*RASharedDB) {
 /*
     Escucha continuamente los mensajes y los gestiona (handleRequest / handleReply)
 */
-func (ra *RASharedDB) ReceiveMessages(file string) {
+func (ra *RASharedDB) ReceiveMessages(ms *ms.MessageSystem, file string) {
 	for {
 		// Esperamos un mensaje del sistema de mensajería (bloqueante)
-		raw := ra.MS.Receive()
+		raw := ms.Receive()
 
+        fmt.Printf("Proceso %d recibe un mensaje en el RaListener\n", ra.MS.Me)
 		// Determinar el tipo de mensaje recibido
 		switch raw.(type) {
 		    case Request:
-                fmt.Printf("Proceso %d recibió mensaje request: %#v\n", ra.Me, raw)
+                fmt.Printf("Proceso %d recibió mensaje request: %#v\n", ra.MS.Me, raw)
 				ra.charequests <- raw.(Request) // Mensaje REQUEST recibido
 			case Reply:
-                fmt.Printf("Proceso %d recibió mensaje reply: %#v\n", ra.Me, raw)
+                fmt.Printf("Proceso %d recibió mensaje reply: %#v\n", ra.MS.Me, raw)
 				ra.chareplies <- raw.(Reply) // Mensaje REPLY recibido
-//            case UpdateFile:
-  //              fmt.Printf("Proceso %d recibió mensaje actualizar fichero: %#v\n", ra.Me, raw)
-                // escribir fichero
-    //            lector.WriteMessage(file, raw.Texto)
+           case UpdateFile:
+               update := raw.(UpdateFile)
+               fmt.Printf("Proceso %d recibió mensaje actualizar fichero: %#v\n", ra.MS.Me, update)
+                //escribir fichero
+               rd_wr.WriteMessage(file, update.Text)
 
-      //          newFile := escritor.Read(file)
-        //        fmt.Println("Proceso" , ra.Me, "actualizo fichero: ", file)                
+               newFile := rd_wr.Read(file)
+               fmt.Println("Proceso" , ra.MS.Me, "actualizo fichero: ", newFile)                
 			default:
-				fmt.Printf("Proceso %d recibió mensaje desconocido: %#v\n", ra.Me, raw)
+				fmt.Printf("Proceso %d recibió mensaje desconocido: %#v\n", ra.MS.Me, raw)
 		}
 	}
 }
@@ -150,6 +154,7 @@ func (ra *RASharedDB) ReceiveMessages(file string) {
     Si el proceso local quiere entrar en SC, decide si se difiere o responde según los números de secuencia y los IDs de los procesos
 */
 func (ra *RASharedDB) handleRequest(){
+    fmt.Printf("Lanzado RecievesRequest para el proceso %d\n", ra.MS.Me)
     for {
         req := <-ra.charequests
         // varable para diferir la respuesta
@@ -173,6 +178,7 @@ func (ra *RASharedDB) handleRequest(){
         } else {
             // sin no se difiere, enviamos la respuesta
             ra.MS.Send(req.Pid, Reply{})
+            fmt.Println("Enviando reply a pid: ", req.Pid, " desde el nodo ", ra.MS.Me)
         }
     }
 
@@ -186,6 +192,7 @@ func (ra *RASharedDB) handleRequest(){
 
 */
 func (ra *RASharedDB) handleReply(){
+    fmt.Printf("Lanzado handleReply para el proceso %d\n", ra.MS.Me)
     for {
         <-ra.chareplies
         ra.OutRepCnt--
@@ -213,25 +220,28 @@ func (ra *RASharedDB) handleReply(){
     4. Esperar el REPLY de todos
 */
 func (ra *RASharedDB) PreProtocol(){
+    fmt.Printf("Proceso %d entra a PreProtocol \n", ra.MS.Me)
     ra.Mutex.Lock()
     //indicar que se quiere entrar en SC
     ra.ReqCS = true
-    ra.Mutex.Unlock()
     //genera un número de secuencia mayor que el más alto registrado
     ra.OurSeqNum = ra.HigSeqNum + 1
+    ra.Mutex.Unlock()
 
     //espera respuesta de todos los demás 
-    ra.OutRepCnt = ra.N - 1
+    ra.OutRepCnt = NUM_PROCESOS - 1
 
     //envío request a todos los demás
-    for j := 1; j <= ra.N; j++ {
-        if j != ra.Me {
-            ra.MS.Send(j, Request{Clock: ra.OurSeqNum, Pid: ra.Me})
+    for j := 1; j <= NUM_PROCESOS; j++ {
+        if j != ra.MS.Me {
+            fmt.Printf("Proceso %d envia una request a %d\n", ra.MS.Me, j)
+            ra.MS.Send(j, Request{Clock: ra.OurSeqNum, Pid: ra.MS.Me})
         }
     }
 
     // bloqueo para esperar notificación reply
     <-ra.chrep
+    fmt.Printf("Proceso %d sale de PreProtocol \n", ra.MS.Me)
 }
 
 //Pre: Verdad
@@ -246,18 +256,19 @@ func (ra *RASharedDB) PreProtocol(){
     2. Enviar REPLY a los procesos que han quedado diferidos 
 */
 func (ra *RASharedDB) PostProtocol(){
+    fmt.Printf("Proceso %d entra a PostProtocol \n", ra.MS.Me)
     ra.Mutex.Lock()
-
     //indicamos salida de SC
     ra.ReqCS = false
     ra.Mutex.Unlock()
     //revisa procesos diferido y manda rely
-    for j := 1; j <= ra.N; j++ {
+    for j := 1; j <= NUM_PROCESOS; j++ {
         if ra.RepDefd[j-1] {
             ra.RepDefd[j-1] = false
             ra.MS.Send(j, Reply{})
         }
     }
+    fmt.Printf("Proceso %d sale de PostProtocol \n", ra.MS.Me)
 }
 
 /*------------------------------------------------------

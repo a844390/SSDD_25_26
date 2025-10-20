@@ -105,22 +105,18 @@ func handleConnection(conn net.Conn, barrierChan chan<- bool, quitChannel chan<-
 //   - Error si algo falla
 //
 // ================================================================
-func getEndpoints() ([]string, int, error) {
-	if len(os.Args) != 3 {
-		return nil, 0, errors.New("Usage: go run barrier.g <endpoints file> <line number>")
-	}
+func getEndpoints(endpointsFile string, lineNumber int) ([]string, int, error) {
 
-	endpointsFile := os.Args[1]
 	/* Hacemos esta declaración porque más abajo cuando se asigna
 	   valor en "endpoints, err = readEndpoints(endpointsFile)"
 	   err ya existe y por tanto se tiene que usar "=". En go
 	   cuando se usa ":=" es para crear una variable y asignarle
 	   valor.*/
 	var endpoints []string // Por qué esta declaración ?
-	lineNumber, err := strconv.Atoi(os.Args[2])
-	if err != nil || lineNumber < 1 {
+	endpoints, err := readEndpoints(endpointsFile)
+	if lineNumber < 1 {
 		fmt.Println("Invalid line number")
-	} else if endpoints, err = readEndpoints(endpointsFile); err != nil {
+	} else if err != nil {
 		fmt.Println("Error reading endpoints:", err)
 	} else if lineNumber > len(endpoints) {
 		fmt.Printf("Line number %d out of range\n", lineNumber)
@@ -142,7 +138,7 @@ func acceptAndHandleConnections(listener net.Listener, quitChannel chan bool,
 		select {
 		case <-quitChannel:
 			fmt.Println("Stopping the listener...")
-			break
+			return
 		default:
 			conn, err := listener.Accept()
 			if err != nil {
@@ -194,7 +190,7 @@ func notifyOtherDistributedProcesses(endPoints []string, lineNumber int) {
 // 3. Envía notificaciones a los demás procesos
 // 4. Espera hasta que todos lleguen a la barrera
 // ================================================================
-func main() {
+func HagoBarrera(endpointsFile string, lineNumber int) {
 	/*	var listener net.Listener
 
 			if len(os.Args) != 3 {
@@ -213,7 +209,7 @@ func main() {
 				}
 			}
 	*/ // Sintaxis confusa
-	endPoints, lineNumber, err := getEndpoints()
+	endPoints, lineNumber, err := getEndpoints(endpointsFile, lineNumber)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

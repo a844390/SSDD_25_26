@@ -6,7 +6,8 @@ import (
 	"math/rand"
 	"os"
 	"practica2/barrier"
-	"practica2/ra" //Fucniones de lectura y escritura de ficheros
+	"practica2/ra"
+	"practica2/rd_wr"
 	"strconv"
 	"time"
 )
@@ -15,19 +16,6 @@ func close(ra *ra.RASharedDB) {
 	time.Sleep(1*time.Minute + 30*time.Second)
 	fmt.Println("Cerrando ms: ", ra.MS.Me)
 	ra.Stop()
-}
-
-func WriteMessage(fich string, msj string) {
-	fichero, err := os.OpenFile(fich, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666) // Abre el fichero en modo escritura
-	if err != nil {
-		log.Fatalf("Error al abrir el fichero: %v", err)
-	}
-	defer fichero.Close()
-	_, err = fichero.WriteString(msj) // Escribe el texto en el fichero
-	if err != nil {
-		log.Fatalf("Error al escribir en el fichero: %v", err)
-	}
-	fmt.Println("Ya he escrito en el fichero: " + fich)
 }
 
 func main() {
@@ -50,13 +38,15 @@ func main() {
 	defer fichero.Close()
 
 	//estructura RASharedDB
-	ras := ra.New(numLinea, "../../ms/users.txt", ra.NUM_PROCESOS, "escritor")
+	ras := ra.New(numLinea, "../../ms/users.txt", "escritor")
 	fmt.Printf("Estructura RA del proceso %d creada\n", numLinea)
 	time.Sleep(2 * time.Second) // Espera para que se activen todos los procesos
 	// Lanzar el listener
-	go ras.ReceiveMessages(nomFichero)
+	go ras.ReceiveMessages(ras.MS, nomFichero)
 	fmt.Printf("Listener del proceso %d lanzado\n", numLinea)
+
 	go func() {
+		fmt.Printf("Lanza funcion para escribir del proceso %d\n", numLinea)
 		msj := "Escribe: " + strconv.Itoa(pid) + "\n"
 
 		for {
@@ -64,19 +54,24 @@ func main() {
 			time.Sleep(time.Duration(tiempoAleatorio) * time.Second) // Duerme el proceso durante el tiempo aleatorio
 			ras.PreProtocol()
 			fmt.Printf("Proceso %d escribiendo mensaje: %s", numLinea, msj)
-			WriteMessage(nomFichero, msj)
+			writed := rd_wr.WriteMessage(nomFichero, msj)
 			for i := 1; i <= ra.NUM_PROCESOS; i++ {
 				//Si no soy yo envio aviso de que he escrito
 				if i != ras.MS.Me {
-					ras.MS.Send(i, ra.ActualizaFichero{
+					ras.MS.Send(i, ra.UpdateFile{
 						Pid:      i,
-						Texto:  msj,
+						Text:  msj,
 					})
 				}
 			}
 			ras.PostProtocol()
+			fmt.Println("Se ha escrito en el fichero: ")
+			fmt.Println(writed)
+			// Duerme 10 segundos antes de volver a leer
+			time.Sleep(10 * time.Second)
 		}
 	}()
-	close(ras)
-
+	go close(ras)
+	for {
+	}
 }

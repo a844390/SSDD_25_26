@@ -7,6 +7,7 @@ import (
 	"os"
 	"practica2/barrier"
 	"practica2/ra"
+	"practica2/rd_wr"
 	"strconv"
 	"time"
 )
@@ -15,15 +16,6 @@ func close(ra *ra.RASharedDB) {
 	time.Sleep(1*time.Minute + 30*time.Second)
 	fmt.Println("Cerrando ms: ", ra.MS.Me)
 	ra.Stop()
-}
-
-func Read(fich string) string {
-	contenido, err := os.ReadFile(fich) // Lee el contenido del fichero
-	if err != nil {
-		log.Fatalf("Error al leer en el fichero: %v", err)
-	}
-	fmt.Println("Ya he leido el fichero: " + fich)
-	return string(contenido)
 }
 
 func main() {
@@ -46,11 +38,11 @@ func main() {
 	defer fichero.Close()
 
 	//estructura RASharedDB
-	ras := ra.New(numLinea, "../../ms/users.txt", ra.NUM_PROCESOS, "lector")
+	ras := ra.New(numLinea, "../../ms/users.txt", "lector")
 	fmt.Printf("Estructura RA del proceso %d creada\n", numLinea)
 	time.Sleep(2 * time.Second) // Espera para que se activen todos los procesos
 	// Lanzar el listener
-	go ras.ReceiveMessages(nomFichero)
+	go ras.ReceiveMessages(ras.MS, nomFichero)
 	fmt.Printf("Listener del proceso %d lanzado\n", numLinea)
 	go func() {
 
@@ -59,12 +51,14 @@ func main() {
 			time.Sleep(time.Duration(tiempoAleatorio) * time.Second) // Duerme el proceso durante el tiempo aleatorio
 			ras.PreProtocol()
 			fmt.Printf("Proceso %d leyendo mensaje", numLinea)
-			msj := Read(nomFichero)
+			msj := rd_wr.Read(nomFichero)
 			//no hace falta avisar al resto de procesos, ya que no se modifica el fichero
 			ras.PostProtocol()
 			fmt.Printf("Proceso %d ha escrito mensaje: %s", numLinea, msj)
 			time.Sleep(10 * time.Second) // Espera antes de leer de nuevo
 		}
 	}()
-	close(ras)
+	go close(ras)
+	for {
+	}
 }
