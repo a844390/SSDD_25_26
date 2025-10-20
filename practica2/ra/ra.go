@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	NUM_LECTORES   = 1
+	NUM_LECTORES   = 2
 	NUM_ESCRITORES = 1
 	NUM_PROCESOS   = NUM_LECTORES + NUM_ESCRITORES
 )
@@ -35,6 +35,7 @@ const (
 type Request struct{
     Clock   int
     Pid     int
+    Tipo    string
 }
 
 /*
@@ -63,7 +64,10 @@ type RASharedDB struct {
     Mutex       sync.Mutex          // mutex para proteger concurrencia sobre las variables
     chareplies  chan Reply          // canal para recibir mensajes Reply
     charequests chan Request        // canal para recibir mensajes Request
-    tipo       string               // tipo de proceso: lector o escritor    
+    tipo       string               // tipo de proceso: lector o escritor  
+    
+    readersActive int               // lectores en SC
+    writerActive  bool              // escritor en SC
 }
 
 /*------------------------------------------------------
@@ -167,7 +171,14 @@ func (ra *RASharedDB) handleRequest(){
 
         ra.Mutex.Lock()
         // si estoy pidiendo en SC, y el proceso tiene mayor número de secuencia o si es igual, si tiene mayor pid, se difiere
-        deferReply = ra.ReqCS && ((req.Clock > ra.OurSeqNum) || (req.Clock == ra.OurSeqNum && req.Pid > ra.Me))
+        // Distribución de logica en funcion de lector o escritor
+        if ra.tipo == "escritor" {
+            // escritor difiere si hay alguien en SC (lector o escritor)
+            deferReply = ra.ReqCS || ra.readersActive > 0 || ra.writerActive
+        } else if ra.tipo == "lector" {
+            // lector difiere si hay un escritor en SC
+            deferReply = ra.ReqCS && ra.writerActive
+        }
         ra.Mutex.Unlock()
 
         // Si se difiere la respuesta se marca en el vector
@@ -235,12 +246,21 @@ func (ra *RASharedDB) PreProtocol(){
     for j := 1; j <= NUM_PROCESOS; j++ {
         if j != ra.MS.Me {
             fmt.Printf("Proceso %d envia una request a %d\n", ra.MS.Me, j)
-            ra.MS.Send(j, Request{Clock: ra.OurSeqNum, Pid: ra.MS.Me})
+            ra.MS.Send(j, Request{Clock: ra.OurSeqNum, Pid: ra.MS.Me, Tipo: ra.tipo})
         }
     }
 
     // bloqueo para esperar notificación reply
     <-ra.chrep
+
+    ra.Mutex.Lock()
+    // marcar que entramos a SC
+    if ra.tipo == "lector" {
+        ra.readersActive++
+    } else if ra.tipo == "escritor" {
+        ra.writerActive = true
+    }
+    ra.Mutex.Unlock()
     fmt.Printf("Proceso %d sale de PreProtocol \n", ra.MS.Me)
 }
 
@@ -258,6 +278,11 @@ func (ra *RASharedDB) PreProtocol(){
 func (ra *RASharedDB) PostProtocol(){
     fmt.Printf("Proceso %d entra a PostProtocol \n", ra.MS.Me)
     ra.Mutex.Lock()
+    if ra.tipo == "lector" {
+        ra.readersActive--
+    } else if ra.tipo == "escritor" {
+        ra.writerActive = false
+    }
     //indicamos salida de SC
     ra.ReqCS = false
     ra.Mutex.Unlock()
