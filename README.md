@@ -1,5 +1,7 @@
-Curso: Sistemas Distribuidos (https://www.notion.so/Sistemas-Distribuidos-263c8d9d3c3f80de82b1f86d3904f9ad?pvs=21)
-Estado: En progreso
+Prácticas de la asignatura de Sistemas Distribuidos, de la Escuela de Ingeniería y Arquitectura de la Universidad de Zaragoza.
+
+Curso: Sistemas Distribuidos (https://www.notion.so/Sistemas-Distribuidos-263c8d9d3c3f80de82b1f86d3904f9ad?pvs=21)\n
+Estado: En progreso\n
 Año: 2025/2026
 
 
