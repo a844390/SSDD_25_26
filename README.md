@@ -1,6 +1,6 @@
 Curso: Sistemas Distribuidos (https://www.notion.so/Sistemas-Distribuidos-263c8d9d3c3f80de82b1f86d3904f9ad?pvs=21)
 Estado: En progreso
-Fecha: 23 de septiembre de 2025 → 7 de octubre de 2025
+Año: 2025/2026
 
 
 ### Notas
@@ -16,5 +16,5 @@ Script nav.sh:
 ```powershell
 #!/bin/bash
 
-cd /misc/alumnos/sd/sd2526/a844390
+cd /misc/alumnos/sd/sd2526/a840269
 ```
