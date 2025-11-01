@@ -67,22 +67,47 @@ type AplicaOperacion struct {
 	Operacion TipoOperacion
 }
 
+// entrada en el log de Raft
+// cada nodo de Raft mantiene un array de LogEntry que contiene las operaciones
+// pendientes o comprometidas que deben aplicarse a la maquina de estados replicada
+type LogEntry struct {
+	Index     int				// indice de esta entrada dentro del log (iniciada en 1)
+	Term      int				// termino en el que el lider recibio esta entrada (para detectar inconsistencias en el log)
+	Operation TipoOperacion		// comando que se debe aplicar a la maquina de estados
+}
+
 // Tipo de dato Go que representa un solo nodo (réplica) de raft
 //
 type NodoRaft struct {
-	Mux   sync.Mutex       // Mutex para proteger acceso a estado compartido
+	Mux   sync.Mutex       			// Mutex para proteger acceso a estado compartido
 
 	// Host:Port de todos los nodos (réplicas) Raft, en mismo orden
-	Nodos []rpctimeout.HostPort
-	Yo    int           // indice de este nodos en campo array "nodos"
-	IdLider int
+	Nodos []rpctimeout.HostPort		//Lista de todos los nodos raft
+	Yo    int           			// indice de este nodos en campo array "nodos"
+	IdLider int						// id del lider actual conocido
 	// Utilización opcional de este logger para depuración
 	// Cada nodo Raft tiene su propio registro de trazas (logs)
 	Logger *log.Logger
 
 	// Vuestros datos aqui.
+	// Estado persistente en todos los servers
+	// Guardado en almacenamiento estable antes de responder a un RPC
+	CurrentTerm int				// ultimo termino que ha visto el nodo (inicializado a 0, aumenta monotónicamente)
+	VotedFor    int				// id del candidato al que este nodo voto en el trmino actual (-1 si no ha votado)
+	Log         []LogEntry		// log de entradas: cada entrada contiene un comando y el termino en el que fue recibido por el lider
+
+	// Estado volatil en todos los servidores
+	// (no se guarda en disco, se reinicia al arrancar)
+	CommitIndex int				// indice de la entrada más alta conocida comprometida
+	LastApplied int				// indice de la entrada más alta aplicada a la máquina de estados
+
+	// Estado volátil en líderes (reiniciado tras cada elección)
+	NextIndex []int				// para cada servidor: índice de la siguiente entrada de log que debe enviarse al ese seguidor
+	MatchIndex []int			// para cada servidor: índice de la entrada más alta replicada en ese seguidor
+
+	ApplyCh chan AplicaOperacion // canal para enviar operaciones comprometidas a la máquina de estados
 	
-	// mirar figura 2 para descripción del estado que debe mantenre un nodo Raft
+	
 }
 
 
@@ -252,8 +277,13 @@ func (nr *NodoRaft) SometerOperacionRaft(operacion TipoOperacion,
 // -----------
 // Nombres de campos deben comenzar con letra mayuscula !
 //
+// representación de los argumentos qie un nodo candidato envia a los demas
+// servidores cuando solicita sus votos durante el proceso de eleccion de lider (RPC RequestVote)
 type ArgsPeticionVoto struct {
-	// Vuestros datos aqui
+	Term int			// termino actual del candidato que solicita el voto
+	CandidateId int 	// id del candidato que solicita el voto
+	LastLogIndex int	// indice de la ultima entrada en el log del candidato (para comparar quien está más actualizado)
+	LastLogTerm int		// termino de la última entrada del log del candidato (para comprobar quien tiene el log mas reciente)
 }
 
 // Structura de ejemplo de respuesta de RPC PedirVoto,
@@ -262,9 +292,10 @@ type ArgsPeticionVoto struct {
 // -----------
 // Nombres de campos deben comenzar con letra mayuscula !
 //
-//
+// respuesta que un servidor denvia al recibir una peticion de voto de un candidato
 type RespuestaPeticionVoto struct {
-	// Vuestros datos aqui
+	Term int 			// termino actual del seguidor (para que el candidato pueda actualizarse si está atrasado)
+	VoteGranted bool	// true si el voto fue concedido al candidato
 }
 
 
@@ -277,13 +308,20 @@ func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 	return nil	
 }
 
-
+// Contiene los argumentos que el líder envía al seguidor al invocar la RPC
+// AppendEntries (para replicar logs o enviar heartbeats)
 type ArgAppendEntries struct {
-	// Vuestros datos aqui
+	Term int			// termino actual del lider (para actualización de followers)
+	LeaderId int		// id del lider, para que los followers puedan redirigir clientes
+	PrevLogIndex int	// indice de la entrada de log anterior a las nuevas (para comprobar coherencia)
+	PrevLogTerm int		// termino de la entrada PrevLogIndex
+	Entries	[]LogEntry	// entradas de log a añadir (vacío si es un heartbeat)
+	LeaderCommit int	// indice de commit del lider
 }
 
 type Results struct {
-	// Vuestros datos aqui
+	Term int 			// termino actual del seguidor (para que el lider pueda actualizarse si se ha atrasado)
+	Success bool 		// true si el seguidor contiene una entrada que coincide con PrevLogIndex y PrevLogTerm
 }
 
 
