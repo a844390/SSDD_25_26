@@ -28,6 +28,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"math/rand"
 	//"crypto/rand"
 	"sync"
 	"time"
@@ -97,6 +98,7 @@ type NodoRaft struct {
 	Logger *log.Logger
 
 	// Vuestros datos aqui.
+	EstadoActual EstadoNodo
 	// Estado persistente en todos los servers
 	// Guardado en almacenamiento estable antes de responder a un RPC
 	CurrentTerm int				// ultimo termino que ha visto el nodo (inicializado a 0, aumenta monotónicamente)
@@ -192,7 +194,19 @@ func CicloDeVida(nr *NodoRaft) {
 		fmt.Printf("NodoRaft %d CicloDeVida\n", nr.Yo)
 		switch nr.State {
 		case Seguidor:
-			// Completar...
+			fmt.Println("Soy follower")
+			//Establecemos un timeout aleatorio entre 1 y 2 segundos
+			timeout := time.Duration(1+rand.Intn(2)) * time.Second
+			select {
+			case <-time.After(timeout):
+				//Salta el timeout y el nodo se convierte en candidato
+				fmt.Println("Timeout salta, paso a ser candidato")
+				nr.EstadoActual = Candidato
+				nr.IdLider = -1 //No hay lider
+			case <-nr.receivedHeartbeat: //Si recibo un heartbeat es que hay un lider activo
+				fmt.Println("Heartbeat recibido")
+				nr.EstadoActual = Seguidor
+			}
 		case Candidato:
 			// Completar...
 		case Lider:
@@ -222,7 +236,7 @@ func (nr *NodoRaft) para() {
 func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 	var yo int = nr.Yo
 	var mandato int = nr.CurrentTerm
-	var esLider bool = (nr.State == Lider)
+	var esLider bool = (nr.IdLider == nr.Yo)
 	var idLider int = nr.IdLider
 	
 
@@ -254,10 +268,9 @@ func (nr *NodoRaft) someterOperacion(operacion TipoOperacion) (int, int,
 	idLider := -1
 	valorADevolver := ""
 
-
 	// Vuestro codigo aqui
 	if nr.State != Lider {
-		idLider = nr.idLider
+		idLider = nr.IdLider
 		nr.Mux.Unlock()
 	} else {
 		indice = len(nr.Log)
@@ -296,7 +309,7 @@ func (nr *NodoRaft) someterOperacion(operacion TipoOperacion) (int, int,
 			nr.Logger.Printf("Lider %d operacion %v NO comprometida en indice %d\n",
 						nr.Yo, operacion, indice)
 		}
-
+	}
 	return indice, mandato, EsLider, idLider, valorADevolver
 }
 
@@ -307,9 +320,9 @@ func llamadaAppendEntriesSometer(nr *NodoRaft, nodo int,
 		&ArgAppendEntries{
 			Term:         nr.CurrentTerm,
 			LeaderId:     nr.Yo,
-			PrevLogIndex: entry.Index - 1,
+			PrevLogIndex: len(nr.Log) - 1,
 			PrevLogTerm:  nr.Log[entry.Index - 1].Term,
-			Entries:      []LogEntry{entry},
+			Entries:      entry,
 			LeaderCommit: nr.CommitIndex,
 		},
 		&respuesta,
@@ -337,7 +350,7 @@ func llamadaAppendEntriesSometer(nr *NodoRaft, nodo int,
 // Si no tenemos argumentos o respuesta estructura vacia (tamaño cero)
 type Vacio struct{}
 
-func (nr * NodoRaft) ParaNodo(args Vacio, reply *Vacio) error {
+func (nr *NodoRaft) ParaNodo(args Vacio, reply *Vacio) error {
 	defer nr.para()
 	return nil
 }
@@ -419,7 +432,7 @@ type ArgAppendEntries struct {
 	LeaderId int		// id del lider, para que los followers puedan redirigir clientes
 	PrevLogIndex int	// indice de la entrada de log anterior a las nuevas (para comprobar coherencia)
 	PrevLogTerm int		// termino de la entrada PrevLogIndex
-	Entries	[]LogEntry	// entradas de log a añadir (vacío si es un heartbeat)
+	Entries	LogEntry	// entradas de log a añadir (vacío si es un heartbeat)
 	LeaderCommit int	// indice de commit del lider
 }
 
@@ -428,11 +441,16 @@ type Results struct {
 	Success bool 		// true si el seguidor contiene una entrada que coincide con PrevLogIndex y PrevLogTerm
 }
 
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // Metodo de tratamiento de llamadas RPC AppendEntries
 func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 													  results *Results) error {
-	// Completar....
     nr.Mux.Lock()
 	defer nr.Mux.Unlock()
 
@@ -445,11 +463,10 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 		results.Term = nr.CurrentTerm
 		if args.Entries != (LogEntry{}) {
 			// Añadir entradas al log
-			nr.Log = append(nr.Log, args.Entries...)
+			nr.Log = append(nr.Log, args.Entries)
 		}
 		if args.Term > nr.CurrentTerm {
 			if nr.State == Lider {
-				nr.State = Seguidor
 				nr.serSeguidor <- true
 			} else {
 				if args.LeaderCommit > nr.CommitIndex {

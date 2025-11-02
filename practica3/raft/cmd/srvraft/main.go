@@ -27,14 +27,20 @@ func main() {
 		 nodos = append(nodos, rpctimeout.HostPort(endPoint))
 	}
 
+	addr := string(nodos[me])
+	println("[NodoRaft]", me, "escuchando en", addr)
+
 	// Parte Servidor
 	nr := raft.NuevoNodo(nodos, me, make(chan raft.AplicaOperacion, 1000))
 	rpc.Register(nr)
+	check.CheckError(err, "Error registrando NodoRaft:")
 	
 	//fmt.Println("Replica escucha en :", me, " de ", os.Args[2:])
 
 	l, err := net.Listen("tcp", os.Args[2:][me])
 	check.CheckError(err, "Main listen error:")
+
+	println("[NodoRaft]", me, "listo y escuchando en", addr)
 
 	rpc.Accept(l)
 }

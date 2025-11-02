@@ -5,8 +5,8 @@ import (
 	"fmt"
 	//"log"
 	//"crypto/rand"
-	"os"
-	"path/filepath"
+	//"os"
+	//"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -18,14 +18,14 @@ import (
 
 const (
 	//hosts
-	MAQUINA1      = "127.0.0.1"
-	MAQUINA2      = "127.0.0.1"
-	MAQUINA3      = "127.0.0.1"
+	MAQUINA1 = "192.168.3.7"
+	MAQUINA2 = "192.168.3.7"
+	MAQUINA3 = "192.168.3.8"
 
 	//puertos
-	PUERTOREPLICA1 = "29001"
-	PUERTOREPLICA2 = "29002"
-	PUERTOREPLICA3 = "29003"
+	PUERTOREPLICA1 = "31250"
+	PUERTOREPLICA2 = "31251"
+	PUERTOREPLICA3 = "31252"
 
 	//nodos replicas
 	REPLICA1 = MAQUINA1 + ":" + PUERTOREPLICA1
@@ -45,10 +45,10 @@ const (
 )
 
 // PATH de los ejecutables de modulo golang de servicio Raft
-var PATH string = filepath.Join(os.Getenv("HOME"), "tmp", "p5", "raft")
+var PATH string = "/misc/alumnos/sd/sd2526/a840269/practica3/raft"
 
 	// go run cmd/srvraft/main.go 0 127.0.0.1:29001 127.0.0.1:29002 127.0.0.1:29003
-var EXECREPLICACMD string = "cd " + PATH + "; go run " + EXECREPLICA
+var EXECREPLICACMD string = "cd " + PATH + "; /usr/local/go/bin/go mod tidy" + "; /usr/local/go/bin/go run " + EXECREPLICA
 
 
 
@@ -171,13 +171,13 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 	cfg.startDistributedProcesses()
 
 	// Comprobar estado replica 0
-	cfg.comprobarEstadoRemoto (0, 0, false, -1)
+	cfg.comprobarEstadoRemoto(0, 0, false, -1)
 
 	// Comprobar estado replica 1
-	cfg.comprobarEstadoRemoto (1, 0, false, -1)
+	cfg.comprobarEstadoRemoto(1, 0, false, -1)
 
 	// Comprobar estado replica 2
-	cfg.comprobarEstadoRemoto (2, 0, false, -1)
+	cfg.comprobarEstadoRemoto(2, 0, false, -1)
 
 	// Parar réplicas almacenamiento en remoto
 	cfg.stopDistributedProcesses()
@@ -192,11 +192,10 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 	fmt.Println(t.Name(), ".....................")
 
 	cfg.startDistributedProcesses()
-
+	time.Sleep(10000 * time.Millisecond) //Tiempo maximo para elección de primer lider
 	// Se ha elegido lider ?
 	fmt.Printf("Probando lider en curso\n")
 	cfg.pruebaUnLider(3)
-
 
 	// Parar réplicas alamcenamiento en remoto
 	cfg.stopDistributedProcesses()   // Parametros
@@ -213,16 +212,29 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 	cfg.startDistributedProcesses()
 
 	fmt.Printf("Lider inicial\n")
-	cfg.pruebaUnLider(3)
-
+	liderInicial := cfg.pruebaUnLider(3)
 
 	// Desconectar lider
-	// ???
+	endPoint := cfg.nodosRaft[liderInicial]
+	var reply raft.Vacio
+	err := endPoint.CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	cfg.conectados[liderInicial] = false
+
+	check.CheckError(err, "Error parando el nodo lider")
+
+	//Reconectar al lider como un nuevo nodo
+	despliegue.ExecMutipleHosts(EXECREPLICACMD+
+		" "+strconv.Itoa(liderInicial)+" "+
+		rpctimeout.HostPortArrayToString(cfg.nodosRaft),
+		[]string{endPoint.Host()}, cfg.cr, PRIVKEYFILE)
+	cfg.conectados[liderInicial] = true
+	time.Sleep(20000 * time.Millisecond)
+	
 
 	fmt.Printf("Comprobar nuevo lider\n")
 	cfg.pruebaUnLider(3)
 	
-
 	// Parar réplicas almacenamiento en remoto
 	cfg.stopDistributedProcesses()  //parametros
 
@@ -231,9 +243,21 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 // 3 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	t.Skip("SKIPPED tresOperacionesComprometidasEstable")
+	// t.Skip("SKIPPED tresOperacionesComprometidasEstable")
+	// fmt.Println(t.Name(), ".....................")
 
-	// A completar ???
+	// cfg.startDistributedProcesses()
+
+	// fmt.Printf("Lider inicial\n")
+	// liderInicial := cfg.pruebaUnLider(3)
+	// // Someter 3 operaciones comprometidas
+	// cfg.someterOperacionYComprobarCompromiso(liderInicial, 0, "leer", "claveA", "")
+	// cfg.someterOperacionYComprobarCompromiso(liderInicial, 1, "escribir", "clave1", "valor1")
+	// cfg.someterOperacionYComprobarCompromiso(liderInicial, 2, "escribir", "clave2", "valor2")
+
+	// cfg.stopDistributedProcesses() // Parametros
+
+	// fmt.Println(".............", t.Name(), "Superado")
 }
 
 // Se consigue acuerdo a pesar de desconexiones de seguidor -- 3 NODOS RAFT
@@ -348,7 +372,7 @@ func (cfg *configDespliegue) startDistributedProcesses() {
 								" " + strconv.Itoa(i) + " " +
 								rpctimeout.HostPortArrayToString(cfg.nodosRaft),
 								[]string{endPoint.Host()}, cfg.cr, PRIVKEYFILE)
-
+		cfg.conectados[i] = true
 		// dar tiempo para se establezcan las replicas
 		//time.Sleep(500 * time.Millisecond)
 	}
