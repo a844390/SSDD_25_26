@@ -76,6 +76,13 @@ type LogEntry struct {
 	Operation TipoOperacion		// comando que se debe aplicar a la maquina de estados
 }
 
+type EstadoNodo int
+const (
+	Seguidor EstadoNodo = iota
+	Candidato
+	Lider
+)
+
 // Tipo de dato Go que representa un solo nodo (réplica) de raft
 //
 type NodoRaft struct {
@@ -107,6 +114,16 @@ type NodoRaft struct {
 
 	ApplyCh chan AplicaOperacion // canal para enviar operaciones comprometidas a la máquina de estados
 	
+	State EstadoNodo			// estado actual del nodo: seguidor, candidato o líder
+
+	opComprometida chan string	// canal para notificar que una operación se ha comprometido
+	receivedHeartbeat chan bool	// canal para notificar la recepción de un latido (heartbeat)
+
+	termUpdated chan bool		// canal para notificar que el término ha sido actualizado
+	serSeguidor chan bool		// canal para notificar el cambio a estado de seguidor
+	serLider chan bool			// canal para notificar el cambio a estado de líder
+
+	EnVotacion bool			// indica si el nodo está en proceso de votación
 	
 }
 
@@ -161,11 +178,30 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	}
 
 	// Añadir codigo de inicialización
-	
+	fmt.Printf("NodoRaft %d creado\n", yo)
+	go CicloDeVida(nr)
 
 	return nr
 }
 
+
+func CicloDeVida(nr *NodoRaft) {
+	// Vuestro codigo aqui
+	time.Sleep(10000 * time.Millisecond)
+	for {
+		fmt.Printf("NodoRaft %d CicloDeVida\n", nr.Yo)
+		switch nr.State {
+		case Seguidor:
+			// Completar...
+		case Candidato:
+			// Completar...
+		case Lider:
+			// Completar...
+
+		}
+	}
+
+}
 
 // Metodo Para() utilizado cuando no se necesita mas al nodo
 //
@@ -185,12 +221,9 @@ func (nr *NodoRaft) para() {
 // Cuarto valor es el lider, es el indice del líder si no es él
 func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 	var yo int = nr.Yo
-	var mandato int
-	var esLider bool
-	var idLider int =nr.IdLider
-	
-
-	// Vuestro codigo aqui
+	var mandato int = nr.CurrentTerm
+	var esLider bool = (nr.State == Lider)
+	var idLider int = nr.IdLider
 	
 
 	return yo, mandato, esLider, idLider
@@ -214,19 +247,89 @@ func (nr *NodoRaft) obtenerEstado() (int, int, bool, int) {
 // Cuarto valor es el lider, es el indice del líder si no es él
 func (nr *NodoRaft) someterOperacion(operacion TipoOperacion) (int, int,
 															bool, int, string) {
+	nr.Mux.Lock()
 	indice := -1
 	mandato := -1
-	EsLider := false
+	EsLider := (nr.State == Lider)
 	idLider := -1
 	valorADevolver := ""
-	
+
 
 	// Vuestro codigo aqui
-	
+	if nr.State != Lider {
+		idLider = nr.idLider
+		nr.Mux.Unlock()
+	} else {
+		indice = len(nr.Log)
+		mandato = nr.CurrentTerm
+		newEntry := LogEntry{
+			Index:     indice,
+			Term:      mandato,
+			Operation: operacion,
+		}
+		nr.Log = append(nr.Log, newEntry)
+		nr.Mux.Unlock()
+		nr.Logger.Printf("Lider %d somete operacion %v en indice %d\n",
+						nr.Yo, operacion, indice)
+		commitCh := make(chan bool)
+		commited := 1
+		noCommited := 0
+		for i := 0; i < len(nr.Nodos); i++ {
+			if i != nr.Yo {
+				go llamadaAppendEntriesSometer(nr, i, newEntry, commitCh)
+			}
+		}
+		mayoriaSimple := (len(nr.Nodos) / 2) + 1
+		for (commited < mayoriaSimple) && (noCommited < mayoriaSimple) {
+			result := <-commitCh
+			if result {
+				commited++
+			} else {
+				noCommited++
+			}
+		}
+		if commited >= mayoriaSimple {
+			nr.CommitIndex ++ // Commitear la entrada
+			nr.Logger.Printf("Lider %d operacion %v comprometida en indice %d\n",
+						nr.Yo, operacion, indice)
+		} else {
+			nr.Logger.Printf("Lider %d operacion %v NO comprometida en indice %d\n",
+						nr.Yo, operacion, indice)
+		}
 
 	return indice, mandato, EsLider, idLider, valorADevolver
 }
 
+func llamadaAppendEntriesSometer(nr *NodoRaft, nodo int,
+								entry LogEntry, commitCh chan bool) {
+	var respuesta Results
+	err := nr.Nodos[nodo].CallTimeout("NodoRaft.AppendEntries",
+		&ArgAppendEntries{
+			Term:         nr.CurrentTerm,
+			LeaderId:     nr.Yo,
+			PrevLogIndex: entry.Index - 1,
+			PrevLogTerm:  nr.Log[entry.Index - 1].Term,
+			Entries:      []LogEntry{entry},
+			LeaderCommit: nr.CommitIndex,
+		},
+		&respuesta,
+		200 * time.Millisecond)
+	if err != nil {
+		nr.Logger.Printf("Lider %d AppendEntries fallo en nodo %d para indice %d: %v\n",
+			nr.Yo, nodo, entry.Index, err)
+		commitCh <- false
+	} else {
+		if respuesta.Success {
+			nr.Logger.Printf("Lider %d AppendEntries exito en nodo %d para indice %d\n",
+				nr.Yo, nodo, entry.Index)
+			commitCh <- true
+		} else {
+			nr.Logger.Printf("Lider %d AppendEntries RECHAZADO en nodo %d para indice %d\n",
+				nr.Yo, nodo, entry.Index)
+			commitCh <- false
+		}
+	}
+}
 
 // -----------------------------------------------------------------------
 // LLAMADAS RPC al API
@@ -304,6 +407,7 @@ type RespuestaPeticionVoto struct {
 func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 										reply *RespuestaPeticionVoto) error {
 	// Vuestro codigo aqui
+	//Completar....
 
 	return nil	
 }
@@ -329,6 +433,36 @@ type Results struct {
 func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 													  results *Results) error {
 	// Completar....
+    nr.Mux.Lock()
+	defer nr.Mux.Unlock()
+
+	if args.Term < nr.CurrentTerm {
+		results.Term = nr.CurrentTerm
+		results.Success = false
+	} else {
+		nr.CurrentTerm = args.Term
+		nr.IdLider = args.LeaderId
+		results.Term = nr.CurrentTerm
+		if args.Entries != (LogEntry{}) {
+			// Añadir entradas al log
+			nr.Log = append(nr.Log, args.Entries...)
+		}
+		if args.Term > nr.CurrentTerm {
+			if nr.State == Lider {
+				nr.State = Seguidor
+				nr.serSeguidor <- true
+			} else {
+				if args.LeaderCommit > nr.CommitIndex {
+					nr.CommitIndex = min(args.LeaderCommit, len(nr.Log)-1)
+				}
+				nr.receivedHeartbeat <- true
+				results.Success = true
+			}
+		} else {
+			nr.receivedHeartbeat <- true
+			results.Success = true
+		}
+	}
 
 	return nil
 }
@@ -370,6 +504,16 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 	
 
 	// Completar....
-	
+	fmt.Printf("NodoRaft %d enviarPeticionVoto a nodo %d\n", nr.Yo, nodo)
+	err := nr.Nodos[nodo].CallTimeout("NodoRaft.PedirVoto",
+		args, &reply, 200 * time.Millisecond)
+	if err != nil {
+		nr.Logger.Printf("NodoRaft %d PeticionVoto fallo en nodo %d: %v\n",
+			nr.Yo, nodo, err)
+		return false
+	} else {
+		nr.Logger.Printf("NodoRaft %d PeticionVoto exito en nodo %d: %v\n",
+			nr.Yo, nodo, reply)
+	}
 	return true
 }
