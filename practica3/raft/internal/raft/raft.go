@@ -1,5 +1,7 @@
-// Escribir vuestro código de funcionalidad Raft en este fichero
-//
+// =======================================
+// IMPLEMENTACIÓN DE RAFT EN GO
+// AUTORES: PEDRO CHAVES Y BEATRIZ FETITA
+// =======================================
 
 package raft
 
@@ -53,6 +55,7 @@ const (
 	kLogOutputDir = "./logs_raft/"
 )
 
+// Tipo de operación para el log
 type TipoOperacion struct {
 	Operacion string  // La operaciones posibles son "leer" y "escribir"
 	Clave string
@@ -77,6 +80,7 @@ type LogEntry struct {
 	Operation TipoOperacion		// comando que se debe aplicar a la maquina de estados
 }
 
+// Estados posibles de un nodo en Raft
 type EstadoNodo int
 const (
 	Seguidor EstadoNodo = iota
@@ -98,7 +102,7 @@ type NodoRaft struct {
 	Logger *log.Logger
 
 	// Vuestros datos aqui.
-	EstadoActual EstadoNodo
+	State EstadoNodo			//estado actual: lider, candidato, seguidor
 	// Estado persistente en todos los servers
 	// Guardado en almacenamiento estable antes de responder a un RPC
 	CurrentTerm int				// ultimo termino que ha visto el nodo (inicializado a 0, aumenta monotónicamente)
@@ -115,8 +119,6 @@ type NodoRaft struct {
 	MatchIndex []int			// para cada servidor: índice de la entrada más alta replicada en ese seguidor
 
 	ApplyCh chan AplicaOperacion // canal para enviar operaciones comprometidas a la máquina de estados
-	
-	State EstadoNodo			// estado actual del nodo: seguidor, candidato o líder
 
 	opComprometida chan string	// canal para notificar que una operación se ha comprometido
 	receivedHeartbeat chan bool	// canal para notificar la recepción de un latido (heartbeat)
@@ -148,9 +150,30 @@ type NodoRaft struct {
 func NuevoNodo(nodos []rpctimeout.HostPort, yo int, 
 						canalAplicarOperacion chan AplicaOperacion) *NodoRaft {
 	nr := &NodoRaft{}
-	nr.Nodos = nodos
-	nr.Yo = yo
-	nr.IdLider = -1
+
+	// inicializacion de variables
+	nr.Nodos = nodos		//lista de todos los nodos
+	nr.Yo = yo				//indice en la lista de nodos
+	nr.IdLider = -1			//no hay lider conocido
+
+	nr.State = Follower		// estado inicial de seguidor
+
+	nr.CurrentTerm = 0		//termino inicial
+	nr.VotedFor = -1		//no se ha votado en el termino actual
+
+	nr.CommitIndex = -1 // Inicialmente no hay entradas comprometidas
+	nr.LastApplied = -1 // Inicialmente no hay entradas aplicadas
+
+	nr.NextIndex = make([]int, len(nodos))  // Inicialmente no hay entradas para enviar
+	nr.MatchIndex = make([]int, len(nodos)) // Inicialmente no hay entradas replicadas
+
+	nr.opComprometida = make(chan string)
+	nr.receivedHeartBeat = make(chan bool)
+
+	nr.termUpdated = make(chan bool, len(nodos))
+	nr.serFollower = make(chan bool)
+	nr.serLider = make(chan bool)
+	nr.EnVotacion = false		//actualmente en proceso de votación
 
 	if kEnableDebugLogs {
 		nombreNodo := nodos[yo].Host() + "_" + nodos[yo].Port()
@@ -186,9 +209,12 @@ func NuevoNodo(nodos []rpctimeout.HostPort, yo int,
 	return nr
 }
 
+// Funcion para obtener un timeout aleatorio de entre 100 y 500ms
+func obtenerTimeoutAleatorio() time.Duration {
+	return time.Duration(100+rand.Intn(400)) * time.Millisecond
+}
 
 func CicloDeVida(nr *NodoRaft) {
-	// Vuestro codigo aqui
 	time.Sleep(10000 * time.Millisecond)
 	for {
 		fmt.Printf("NodoRaft %d CicloDeVida\n", nr.Yo)
@@ -196,21 +222,55 @@ func CicloDeVida(nr *NodoRaft) {
 		case Seguidor:
 			fmt.Println("Soy follower")
 			//Establecemos un timeout aleatorio entre 1 y 2 segundos
+			//la base para iniciar una elección si no se recibe un heartbeat
 			timeout := time.Duration(1+rand.Intn(2)) * time.Second
 			select {
 			case <-time.After(timeout):
-				//Salta el timeout y el nodo se convierte en candidato
+				//expita el timeout
 				fmt.Println("Timeout salta, paso a ser candidato")
-				nr.EstadoActual = Candidato
-				nr.IdLider = -1 //No hay lider
+				nr.State = Candidato	//cambio de estado a candidato
+				nr.IdLider = -1 		//No hay lider concido
 			case <-nr.receivedHeartbeat: //Si recibo un heartbeat es que hay un lider activo
 				fmt.Println("Heartbeat recibido")
-				nr.EstadoActual = Seguidor
+				nr.State = Seguidor		//se mantiene como seguidor
 			}
 		case Candidato:
-			// Completar...
+			fmt.Println("Soy Candidato")
+			nr.CurrentTerm++		//incrementa el termino actual antes de inciar una nueva votacion
+			nr.VotedFor = nr.Yo		//se vota a si mismo
+
+			go nr.iniciarProcesoVotacion()
+			//timer para la duracion máxima de la votación
+			timer := time.NewTimer(obtenerTimeoutAleatorio())
+			select {
+			case <-nr.receivedHeartBeat:
+				//se recive latido, hay un lider activo y se vuelve al estado de seguidor
+				nr.State = Seguidor
+
+			case <-timer.C:
+				//acaba el tiempo de eleccion, se inicia una nueva
+				nr.State = Candidato
+
+			case <-nr.serFollower:
+				//recepcion de una señal para volver a ser seguidor
+				nr.State = Seguidor
+
+			case <-nr.serLider:
+				//recepción de señal para ser lider
+				nr.State = Lider
+			}
 		case Lider:
-			// Completar...
+			fmt.Println("Soy Lider")
+			nr.IdLider = nr.Yo
+			sendHeartBeatTodos(nr)
+			timer := time.NewTimer(100 * time.Millisecond)
+
+			select {
+			case <-nr.serFollower:
+				nr.State = Seguidor
+			case <-timer.C:
+				nr.State = Lider
+			}
 
 		}
 	}
@@ -224,6 +284,33 @@ func CicloDeVida(nr *NodoRaft) {
 //
 func (nr *NodoRaft) para() {
 	go func() {time.Sleep(5 * time.Millisecond); os.Exit(0) } ()
+}
+
+// Funcion para enviar un heartbeat a todos los nodos
+func sendHeartBeatTodos(nr *NodoRaft) {
+	var reply Results
+	for i := 0; i < len(nr.Nodos); i++ {
+		if i != nr.Yo {
+			go nr.enviarHeartBeat(i, &ArgAppendEntries{nr.CurrentTerm, nr.Yo, 0, 0, LogEntry{}, nr.CommitIndex}, &reply)
+		}
+	}
+}
+
+// Funcion para enviar un heartbeat a un nodo
+func (nr *NodoRaft) enviarHeartBeat(nodo int, args *ArgAppendEntries, reply *Results) bool {
+	err := nr.Nodos[nodo].CallTimeout("NodoRaft.AppendEntries", args, reply, 200*time.Millisecond)
+	if err != nil {
+		return false
+	} else {
+		if reply.Term > nr.CurrentTerm { //Si el termino del que le he mandado el heartbeat es mayor que el mio
+			nr.Mux.Lock()               // Bloquear acceso a estado compartido
+			nr.CurrentTerm = reply.Term //Actualizo mi termino
+			nr.serFollower <- true      //Me convierto en follower
+			nr.IdLider = -1             //No hay lider, hay que elegir uno nuevo
+			nr.Mux.Unlock()             // Desbloquear acceso a estado compartido
+		}
+		return true
+	}
 }
 
 // Devuelve "yo", mandato en curso y si este nodo cree ser lider
@@ -414,14 +501,113 @@ type RespuestaPeticionVoto struct {
 	VoteGranted bool	// true si el voto fue concedido al candidato
 }
 
+/*
+ */
+func (nr *NodoRaft) iniciarProcesoVotacion() {
+	nr.EnVotacion = true
+	args := ArgsPeticionVoto{
+		Term: nr.CurrentTerm,
+		CandidateId: nr.Yo,
+		LastLogIndex: nr.CommitIndex,
+		LastLogTerm: nr.LastTermApplied,
+	}
+	fmt.Println("Iniciando proceso de votacion con termino: ", args.Term, " y candidato: ", args.CandidateId, " y ultimo indice logeado: ", args.LastLogIndex, " y ultimo periodo logeado: ", args.LastLogTerm)
+
+	voteResult := make(chan bool, len(nr.Nodos)-1)
+
+	var respuesta RespuestaPeticionVoto
+
+	for i := 0; i < len(nr.Nodos); i++ {
+		if i != nr.Yo {
+			go nr.pedirVotoPersistente(i, &args, &respuesta, voteResult)
+		}
+	}
+
+	mayoriaSimple := (len(nr.Nodos) / 2) + 1
+	votosFavorables := 1
+	votosNegados := 0
+
+	for (votosFavorables < mayoriaSimple) && (votosNegados < mayoriaSimple) {
+		voto := <-voteResult
+		fmt.Println("Recibido voto: ", voto)
+		if voto {
+			votosFavorables++
+		} else {
+			votosNegados++
+		}
+
+	}
+
+	if votosFavorables >= mayoriaSimple {
+		nr.serLider <- true
+	} else {
+		nr.serFollower <- true
+	}
+	nr.EnVotacion = false
+}
+
+func (nr *NodoRaft) pedirVotoPersistente(nodo int, args *ArgsPeticionVoto,
+	reply *RespuestaPeticionVoto, votoResult chan bool) {
+	votacionTerminada := false
+	vaciarCanal(nr.termUpdated)
+	for !votacionTerminada && nr.State != Leader { //Mientras no haya terminado la votacion y no sea lider
+		select {
+		//Se ha terminado el periodo de votacion
+		case <-nr.termUpdated:
+			fmt.Println("Se ha terminado el periodo de votacion")
+			votacionTerminada = true
+			nr.EnVotacion = false
+			votoResult <- false
+		default:
+			votacionTerminada = nr.enviarPeticionVoto(nodo, args, reply)
+			fmt.Println("Votacion terminada: ", votacionTerminada)
+			if votacionTerminada {
+				if reply.Granted {
+					fmt.Println("Voto concedido por nodo: ", nodo)
+					votoResult <- true
+				} else {
+					fmt.Println("Voto denegado por nodo: ", nodo)
+					votoResult <- false
+				}
+				nr.EnVotacion = false
+			} else {
+				fmt.Println("Ha habido un error en la RPC de PedirVoto")
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+}
 
 // Metodo para RPC PedirVoto
 //
 func (nr *NodoRaft) PedirVoto(peticion *ArgsPeticionVoto,
 										reply *RespuestaPeticionVoto) error {
-	// Vuestro codigo aqui
-	//Completar....
+	nr.Mux.Lock()
+	defer nr.Mux.Unlock()
+	fmt.Println("Peticion de voto recibida con termino: ", peticion.Term)
 
+	
+	if (peticion.Term < nr.CurrentTerm) || (peticion.Term == nr.CurrentTerm && nr.VotedFor != peticion.CandidateId) {
+		reply.Term = nr.CurrentTerm
+		reply.Granted = false
+		fmt.Println("Voto rechazado")
+
+	} else if peticion.Term > nr.CurrentTerm {
+		nr.CurrentTerm = peticion.Term
+		nr.VotedFor = peticion.CandidateId
+		reply.Term = nr.CurrentTerm
+		reply.Granted = true
+		fmt.Println("Voto concedido")
+		if nr.EnVotacion {
+			fmt.Println("Estoy en votacion y mando al canal")
+			nr.termUpdated <- true
+		}
+		if nr.State == Leader || nr.State == Candidate {
+			fmt.Println("Era lider o candidato y me voy a convertir en follower")
+			nr.serFollower <- true
+			fmt.Println("Me convierto en follower")
+		}
+	}
 	return nil	
 }
 
@@ -519,8 +705,6 @@ func (nr *NodoRaft) AppendEntries(args *ArgAppendEntries,
 func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 											reply *RespuestaPeticionVoto) bool {
 	
-
-	// Completar....
 	fmt.Printf("NodoRaft %d enviarPeticionVoto a nodo %d\n", nr.Yo, nodo)
 	err := nr.Nodos[nodo].CallTimeout("NodoRaft.PedirVoto",
 		args, &reply, 200 * time.Millisecond)
@@ -533,4 +717,14 @@ func (nr *NodoRaft) enviarPeticionVoto(nodo int, args *ArgsPeticionVoto,
 			nr.Yo, nodo, reply)
 	}
 	return true
+}
+
+func vaciarCanal(ch chan bool) {
+	for {
+		select {
+		case <-ch: // Consume un valor del canal
+		default: // Sale si el canal está vacío
+			return
+		}
+	}
 }
