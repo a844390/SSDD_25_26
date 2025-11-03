@@ -187,7 +187,7 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 
 // Primer lider en marcha - 3 NODOS RAFT
 func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
-	t.Skip("SKIPPED ElegirPrimerLiderTest2")
+	//t.Skip("SKIPPED ElegirPrimerLiderTest2")
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -205,7 +205,7 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 
 // Fallo de un primer lider y reeleccion de uno nuevo - 3 NODOS RAFT
 func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
-	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -243,21 +243,21 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 // 3 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	// t.Skip("SKIPPED tresOperacionesComprometidasEstable")
-	// fmt.Println(t.Name(), ".....................")
+	//t.Skip("SKIPPED tresOperacionesComprometidasEstable")
+	fmt.Println(t.Name(), ".....................")
 
-	// cfg.startDistributedProcesses()
+	cfg.startDistributedProcesses()
 
-	// fmt.Printf("Lider inicial\n")
-	// liderInicial := cfg.pruebaUnLider(3)
-	// // Someter 3 operaciones comprometidas
-	// cfg.someterOperacionYComprobarCompromiso(liderInicial, 0, "leer", "claveA", "")
-	// cfg.someterOperacionYComprobarCompromiso(liderInicial, 1, "escribir", "clave1", "valor1")
-	// cfg.someterOperacionYComprobarCompromiso(liderInicial, 2, "escribir", "clave2", "valor2")
+	fmt.Printf("Lider inicial\n")
+	liderInicial := cfg.pruebaUnLider(3)
+	// Someter 3 operaciones comprometidas
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 0, "leer", "claveA", "")
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 1, "escribir", "clave1", "valor1")
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 2, "escribir", "clave2", "valor2")
 
-	// cfg.stopDistributedProcesses() // Parametros
+	cfg.stopDistributedProcesses() //Parametros
 
-	// fmt.Println(".............", t.Name(), "Superado")
+	fmt.Println(".............", t.Name(), "Superado")
 }
 
 // Se consigue acuerdo a pesar de desconexiones de seguidor -- 3 NODOS RAFT
@@ -378,7 +378,7 @@ func (cfg *configDespliegue) startDistributedProcesses() {
 	}
 
 	// aproximadamente 500 ms para cada arranque por ssh en portatil
-	time.Sleep(2500 * time.Millisecond)
+	time.Sleep(10000 * time.Millisecond)
 }
 
 //
@@ -405,4 +405,24 @@ func (cfg *configDespliegue) comprobarEstadoRemoto(idNodoDeseado int,
 													idNodoDeseado, cfg.t.Name())
 	}
 
+}
+
+// Someter operacion y comprobar su compromiso
+func (cfg *configDespliegue) someterOperacionYComprobarCompromiso(
+	idLider int, indiceLog int, operacion string, clave string, valor string) {
+	indice, mandato, esLider, indiceLider, valorADevolver := cfg.someterOperacionRemoto(idLider, operacion, clave, valor)
+	if indice != indiceLog || esLider != true || indiceLider != idLider || valorADevolver != "Operacion realizada con exito" {
+		cfg.t.Fatalf("Operacion no comprometida con exito en replica %d en subtest %s, el estado esperado era %d indice, %d mandato, %t esLider y %d idLider, y le estado encontrado ha sido %d indice, %d mandato, %t esLider y %d idLider",
+			idLider, cfg.t.Name(), indiceLog, 0, true, idLider, indice, mandato, esLider, indiceLider)
+	}
+}
+
+func (cfg *configDespliegue) someterOperacionRemoto(idLider int, operacion string,
+	clave string, valor string) (int, int, bool, int, string) {
+	var reply raft.ResultadoRemoto
+	err := cfg.nodosRaft[idLider].CallTimeout(
+		"NodoRaft.SometerOperacionRaft", raft.TipoOperacion{
+			Operacion: operacion, Clave: clave, Valor: valor}, &reply, 5000*time.Millisecond)
+	check.CheckError(err, "Error en llamada RPC SometerOperacion")
+	return reply.IndiceRegistro, reply.Mandato, reply.EsLider, reply.IdLider, reply.ValorADevolver
 }
