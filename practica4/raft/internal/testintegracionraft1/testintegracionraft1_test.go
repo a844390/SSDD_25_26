@@ -18,8 +18,8 @@ import (
 
 const (
 	//hosts
-	MAQUINA1 = "192.168.3.7"
-	MAQUINA2 = "192.168.3.7"
+	MAQUINA1 = "192.168.3.8"
+	MAQUINA2 = "192.168.3.8"
 	MAQUINA3 = "192.168.3.8"
 
 	//puertos
@@ -161,7 +161,7 @@ func (cfg *configDespliegue) stop() {
 
 // Se pone en marcha una replica ?? - 3 NODOS RAFT
 func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
-	//t.Skip("SKIPPED soloArranqueYparadaTest1")
+	t.Skip("SKIPPED soloArranqueYparadaTest1")
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -187,7 +187,7 @@ func (cfg *configDespliegue) soloArranqueYparadaTest1(t *testing.T) {
 
 // Primer lider en marcha - 3 NODOS RAFT
 func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
-	//t.Skip("SKIPPED ElegirPrimerLiderTest2")
+	t.Skip("SKIPPED ElegirPrimerLiderTest2")
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -205,7 +205,7 @@ func (cfg *configDespliegue) elegirPrimerLiderTest2(t *testing.T) {
 
 // Fallo de un primer lider y reeleccion de uno nuevo - 3 NODOS RAFT
 func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
-	//t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
+	t.Skip("SKIPPED FalloAnteriorElegirNuevoLiderTest3")
 
 	fmt.Println(t.Name(), ".....................")
 
@@ -243,7 +243,7 @@ func (cfg *configDespliegue) falloAnteriorElegirNuevoLiderTest3(t *testing.T) {
 
 // 3 operaciones comprometidas con situacion estable y sin fallos - 3 NODOS RAFT
 func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
-	//t.Skip("SKIPPED tresOperacionesComprometidasEstable")
+	t.Skip("SKIPPED tresOperacionesComprometidasEstable")
 	fmt.Println(t.Name(), ".....................")
 
 	cfg.startDistributedProcesses()
@@ -262,18 +262,50 @@ func (cfg *configDespliegue) tresOperacionesComprometidasEstable(t *testing.T) {
 
 // Se consigue acuerdo a pesar de desconexiones de seguidor -- 3 NODOS RAFT
 func(cfg *configDespliegue) AcuerdoApesarDeSeguidor(t *testing.T) {
-	t.Skip("SKIPPED AcuerdoApesarDeSeguidor")
+	//t.Skip("SKIPPED AcuerdoApesarDeSeguidor")
 
-	// A completar ???
+	fmt.Println(t.Name(), ".....................")
 
+	cfg.startDistributedProcesses()
+
+	liderInicial := cfg.pruebaUnLider(3)
+	fmt.Printf("Lider inicial es %d\n", liderInicial)
 	// Comprometer una entrada
-
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 0, "leer", "claveA", "")
 	//  Obtener un lider y, a continuación desconectar una de los nodos Raft
+	// Desconectar nodo follower
+	endPoint := cfg.nodosRaft[(liderInicial+1)%3]
+	var reply raft.Vacio
+	err := endPoint.CallTimeout("NodoRaft.ParaNodo",
+		raft.Vacio{}, &reply, 10*time.Millisecond)
+	cfg.conectados[(liderInicial+1)%3] = false
 
-
+	check.CheckError(err, "Error parando el nodo")
+	time.Sleep(2500 * time.Millisecond)
+	//debería haber parado un nodo Raft que no es lider así que no hay reeleccion
+	liderInicial = cfg.pruebaUnLider(3)
+	fmt.Printf("Lider inicial es %d\n", liderInicial)
 	// Comprobar varios acuerdos con una réplica desconectada
-
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 1, "escribir", "clave1", "valor1")
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 2, "escribir", "clave2", "valor2")
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 3, "leer", "clave1", "valor1")
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 4, "leer", "clave2", "valor2")
 	// reconectar nodo Raft previamente desconectado y comprobar varios acuerdos
+	//Reconectar el nodo de nuevo
+	// (lider+1)%3 es el nodo desconectado
+	despliegue.ExecMutipleHosts(EXECREPLICACMD+
+		" "+strconv.Itoa((liderInicial+1)%3)+" "+
+		rpctimeout.HostPortArrayToString(cfg.nodosRaft),
+		[]string{endPoint.Host()}, cfg.cr, PRIVKEYFILE)
+	cfg.conectados[(liderInicial+1)%3] = true
+	time.Sleep(10000 * time.Millisecond)
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 5, "leer", "claveA", "")
+	cfg.someterOperacionYComprobarCompromiso(liderInicial, 6, "escribir", "clave3", "valor3")
+
+	// Parar réplicas almacenamiento en remoto
+	cfg.stopDistributedProcesses() //parametros
+
+	fmt.Println(".............", t.Name(), "Superado")
 }
 
 // NO se consigue acuerdo al desconectarse mayoría de seguidores -- 3 NODOS RAFT
