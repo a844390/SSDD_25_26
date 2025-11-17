@@ -259,7 +259,7 @@ func CicloDeVida(nr *NodoRaft) {
 			fmt.Println("Soy Candidato")
 			nr.CurrentTerm++		//incrementa el termino actual antes de inciar una nueva votacion
 			nr.VotedFor = nr.Yo		//se vota a si mismo
-
+			nr.numVotos = 1			//cuenta su propio voto
 			//Antes de iniciar el proceso de votación actualiza su máquina de estados para que refleje todo lo comprometido
 			if nr.CommitIndex > nr.LastApplied {
 				nr.LastApplied++
@@ -514,7 +514,9 @@ type EstadoRemoto struct {
 }
 
 func (nr *NodoRaft) ObtenerEstadoNodo(args Vacio, reply *EstadoRemoto) error {
+	nr.Mux.Lock()
 	reply.IdNodo,reply.Mandato,reply.EsLider,reply.IdLider = nr.obtenerEstado()
+	nr.Mux.Unlock()
 	return nil
 }
 
@@ -577,7 +579,6 @@ func (nr *NodoRaft) iniciarProcesoVotacion() {
 		lastLogIndex = -1
 		lastLogTerm  = 0
 	}
-
 	for i := 0; i < len(nr.Nodos); i++ {
 		if i != nr.Yo {
 			go nr.enviarPeticionVoto(i, &ArgsPeticionVoto{nr.CurrentTerm, nr.Yo, lastLogIndex, lastLogTerm}, &respuesta)
