@@ -11,14 +11,17 @@ package despliegue
 
 import (
 	"bufio"
-	"bytes"
-	//"fmt"
+
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	//"os/exec"
+	"bytes"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -75,15 +78,21 @@ func executeCmd(cmd, hostname string, config *ssh.ClientConfig) string {
 
 	var stdoutBuf bytes.Buffer
 	session.Stdout = &stdoutBuf
-	session.Stderr = &stdoutBuf
+	//session.Stderr = &stdoutBuf
 
-	//fmt.Println("ANTES RUN", cmd)
+	go getOutput(&stdoutBuf)
+
+	//fmt.Println("ANTES RUN " + hostname + ":" + cmd)
 
 	session.Run(cmd)
 
 	//fmt.Println("TRAS RUN", cmd)
 
 	return hostname + ": \n" + stdoutBuf.String()
+}
+
+func getOutput(stdoutBuf *bytes.Buffer) {
+	fmt.Println(stdoutBuf.String())
 }
 
 func buildSSHConfig(signer ssh.Signer) *ssh.ClientConfig {
@@ -127,7 +136,7 @@ func ExecMutipleHosts(cmd string,
 
 	//Read private key file for user
 	pkey, err := ioutil.ReadFile(
-						  filepath.Join(os.Getenv("HOME"), ".ssh", privKeyFile))
+		filepath.Join(os.Getenv("HOME"), ".ssh", privKeyFile))
 
 	//fmt.Println("PrivKey: ", string(pkey))
 

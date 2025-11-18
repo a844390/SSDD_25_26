@@ -1,1 +1,3 @@
-192.168.3.8_31252 -> 10:48:54.816493 raft.go:199: logger initialized
+192.168.3.8_31252 -> 20:55:09.013324 raft.go:210: logger initialized
+192.168.3.8_31252 -> 20:55:20.554697 raft.go:788: NodoRaft 2 PeticionVoto exito en nodo 0: &{1 true}
+192.168.3.8_31252 -> 20:55:20.555206 raft.go:788: NodoRaft 2 PeticionVoto exito en nodo 1: &{1 true}
