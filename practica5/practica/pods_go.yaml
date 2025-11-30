@@ -1,0 +1,104 @@
+###############################################################################
+# SERVICE: raft-service
+###############################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: raft-service            # Nombre del Service que dará identidad DNS común
+  labels:
+    app: rep                    # Etiqueta para emparejar pods/servicios
+spec:
+  clusterIP: None               # Service SIN IP o "headless" → permite DNS por pod
+  selector:                     # Selecciona los pods que pertenecen al servicio
+    app: rep                    # Debe coincidir con el label de los Pods del StatefulSet
+                                # Esto permite que cada POD tenga un DNS individual:
+                                #   <podname>.raft-service.default.svc.cluster.local
+  ports:
+  - port: 6000                  # Puerto del Service (no tiene IP, pero se documenta)
+    name: servidor-port
+    protocol: TCP
+    targetPort: 6000            # Puerto real donde escucha el contenedor en cada pod
+
+
+###############################################################################
+# STATEFULSET: réplicas del servidor Raft
+###############################################################################
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: raft                     # Nombre del StatefulSet (pods: raft-0, raft-1, ...)
+spec:
+  serviceName: raft-service      # Servicio headless asociado (genera DNS individual)
+  replicas: 3                    # Número de réplicas Raft (lo normal en Raft)
+  podManagementPolicy: Parallel  # Arranca todos los pods a la vez (no secuencial)
+                                # Por defecto sería OrderedReady = uno tras otro
+  selector:
+    matchLabels:
+      app: rep                   # Debe coincidir con:
+                                 #   template.metadata.labels.app
+  template:
+    metadata:
+      labels:
+        app: rep                 # Etiqueta que permitirá
+                                 # que el service los detecte
+    spec:
+      terminationGracePeriodSeconds: 10   # Tiempo para terminar correctamente
+      containers:
+      - name: servidor           # Nombre del contenedor dentro del pod
+        image: localhost:5001/srvraft:latest
+                                 # Imagen del servidor Raft subida al registro local
+        env:
+        - name: MISUBDOMINIODNS
+          value: raft-service.default.svc.cluster.local
+                                 # DNS base del servicio headless
+                                 # útil para descubrimiento
+        - name: MINOMBREPOD      # variable que contiene el nombre del propio pod
+                                 # Ej: raft-0, raft-1, raft-2
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        command:
+        - srvraft                # Ejecutable principal (nombre interno en la imagen)
+        - $(MINOMBREPOD)        # ID del servidor (Raft usa su nombre como ID)
+                                 # Se pasa como argumento 1
+        - raft-0.raft-service.default.svc.cluster.local:6000
+        - raft-1.raft-service.default.svc.cluster.local:6000
+        - raft-2.raft-service.default.svc.cluster.local:6000
+                                 # Lista completa de peers (3 nodos)
+                                 # Los pods ya tienen DNS estable gracias al StatefulSet
+        ports:
+        - containerPort: 6000    # El puerto que el contenedor expone para RPC Raft
+
+
+###############################################################################
+# POD: cliente
+###############################################################################
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cliente                  # Pod del cliente → no necesita StatefulSet ni Service
+spec:
+  initContainers:
+    - name: wait-for-raft        # initContainer que espera a que Raft esté levantado
+      image: busybox             # Imagen mínima
+      command:
+        - sh
+        - -c
+        - |
+          # Espera hasta que el servicio del cluster responda en el puerto 6000
+          until nc -zv raft-service.default.svc.cluster.local 6000; do
+            echo "Waiting for raft service to be ready..."
+            sleep 2
+          done
+          echo "Raft service is up!"
+  restartPolicy: OnFailure       # Reinicia si falla, típico para cliente de pruebas
+  containers:
+    - name: cliente
+      image: localhost:5001/cltraft:latest
+                                 # Imagen del cliente subida al registry local
+      command:
+        - /usr/local/bin/cliente # Ejecutable interno del contenedor
+      ports:
+        - containerPort: 7000    # Puerto expuesto por el cliente (si aplica)

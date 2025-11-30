@@ -1,0 +1,12 @@
+192.168.3.7_31251 -> 10:48:54.943405 raft.go:199: logger initialized
+192.168.3.7_31251 -> 10:49:06.095561 raft.go:763: NodoRaft 1 PeticionVoto exito en nodo 2: &{1 true}
+192.168.3.7_31251 -> 10:49:06.096940 raft.go:763: NodoRaft 1 PeticionVoto exito en nodo 0: &{1 true}
+192.168.3.7_31251 -> 10:49:06.246206 raft.go:389: Lider 1 somete operacion {leer claveA } en indice 0
+192.168.3.7_31251 -> 10:49:06.248728 raft.go:447: Lider 1 AppendEntries exito en nodo 0 para indice 0
+192.168.3.7_31251 -> 10:49:06.249256 raft.go:447: Lider 1 AppendEntries exito en nodo 2 para indice 0
+192.168.3.7_31251 -> 10:49:06.250992 raft.go:389: Lider 1 somete operacion {escribir clave1 valor1} en indice 1
+192.168.3.7_31251 -> 10:49:06.253073 raft.go:447: Lider 1 AppendEntries exito en nodo 0 para indice 1
+192.168.3.7_31251 -> 10:49:06.253573 raft.go:447: Lider 1 AppendEntries exito en nodo 2 para indice 1
+192.168.3.7_31251 -> 10:49:06.254902 raft.go:389: Lider 1 somete operacion {escribir clave2 valor2} en indice 2
+192.168.3.7_31251 -> 10:49:06.256796 raft.go:447: Lider 1 AppendEntries exito en nodo 0 para indice 2
+192.168.3.7_31251 -> 10:49:06.256999 raft.go:447: Lider 1 AppendEntries exito en nodo 2 para indice 2
