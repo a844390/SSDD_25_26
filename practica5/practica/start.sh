@@ -1,5 +1,3 @@
-#!/bin/sh
-
 # Añade el directorio actual al PATH del sistema.
 # Esto permite ejecutar scripts locales sin escribir ./ delante.
 export PATH=$PATH:$(pwd)

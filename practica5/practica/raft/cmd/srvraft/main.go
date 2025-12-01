@@ -12,11 +12,13 @@ import (
 	"raft/internal/comun/rpctimeout"
 	"raft/internal/raft"
 	"strconv"
+    "strings"
 )
 
 func main() {
+    meText := strings.ReplaceAll(os.Args[1], "raft-", "")
 	// obtener entero de indice de este nodo
-	me, err := strconv.Atoi(os.Args[1])
+	me, err := strconv.Atoi(meText)
 	check.CheckError(err, "Main, mal numero entero de indice de nodo:")
 
 	fmt.Println("Replica escucha en :", me, " de ", os.Args[2:])

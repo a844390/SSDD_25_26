@@ -207,8 +207,8 @@ type NodoRaft struct {
 
 
     // Canales para aplicar operaciones y devolver resultados a cliente
-	AplicaOperacion chan AplicaOperacion //Aplicacion de operaciones a la máquina de estados
-	ResultOperacion chan string          //Canal para devolver el resultado de una operación
+	AplicarOperacion chan AplicaOperacion //Aplicacion de operaciones a la máquina de estados
+	ResultadoOperacion chan string          //Canal para devolver el resultado de una operación
 
     // Contadores auxiliares
     NumVotos      int
@@ -452,7 +452,7 @@ func CicloDeVida(nr *NodoRaft) {
                     // Esperar la respuesta de la máquina de estados (puede bloquear)
                     res := <-nr.AplicarOperacion
                     // Devolver resultado al cliente que llamó SometerOperacion
-                    nr.ResultadoOperacion <- res
+                    nr.ResultadoOperacion <- res.Operacion.Valor
                 }
             }
         }
