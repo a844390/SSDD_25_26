@@ -70,22 +70,27 @@ Ejecutanto ./start.sh
 - Ejecuta pods y servicio
 
 ### Comados para conocer el estado del clúster
+```script
 - kubectl get pods
 - kubectl get svc
+- kubectl exec raft-0 -ti -- sh # abre una consola dentro de un Pod en Kubernetes
+- kubectl cluster-info --context kind-kind # resumen básico del estado del clúster
+- kubectl get all --all-namespaces -o wide # muestra todo lo que está ejecutándose en el clúster Kubernetes
+```
 
 ### Logs del cliente
-- kubectl logs cliente
+- kubectl logs (cliente/raft-0/raft-1/raft2)
 
 ### Comprobación de recuperación automática
 - kubectl delete pod raft-0
 
 ### Comandos útiles de docker
 ```script
-- docker ps #para ver los contenedores en ejecución
+- docker ps -a -s  # contenedores en marcha y parados, incluido tamaño
+- docker rm <container id or name>
+- docker images # lista de las imágenes guardadas localmente
 ```
 
 Docker (host)
-
-   --> Kind cluster (5 nodos → cada uno es un contenedor Docker)
-   
-   --> Kubernetes Pods (tus contenedores Raft y Cliente)
+--> Kind cluster (5 nodos → cada uno es un contenedor Docker)
+--> Kubernetes Pods (tus contenedores Raft y Cliente)
